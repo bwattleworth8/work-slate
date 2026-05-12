@@ -299,7 +299,6 @@ function createWindow() {
     y: bounds.y,
     minWidth: modeConfig.minWidth,
     minHeight: modeConfig.minHeight,
-    alwaysOnTop: Boolean(settings.alwaysOnTop),
     title: "Work Slate",
     icon: createAppIcon(),
     autoHideMenuBar: true,
@@ -787,14 +786,6 @@ function buildTrayMenu() {
       }
     },
     {
-      label: "Always on Top",
-      type: "checkbox",
-      checked: Boolean(settings.alwaysOnTop),
-      click: (item) => {
-        setAlwaysOnTop(item.checked);
-      }
-    },
-    {
       label: "Light Mode",
       type: "checkbox",
       checked: normalizeTheme(settings.theme) === "light",
@@ -821,22 +812,6 @@ function showMainWindow() {
   mainWindow.show();
   mainWindow.focus();
   hideFloatingTimerWindow();
-}
-
-function setAlwaysOnTop(enabled) {
-  saveSettings({
-    alwaysOnTop: Boolean(enabled)
-  });
-
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setAlwaysOnTop(Boolean(enabled), "floating");
-  }
-
-  if (tray) {
-    tray.setContextMenu(buildTrayMenu());
-  }
-
-  return getPublicSettings();
 }
 
 function setViewMode(viewMode) {
@@ -1019,9 +994,11 @@ function registerIpcHandlers() {
 
   ipcMain.handle("settings:save", (_event, settings) => {
     const nextSettings = settings || {};
+    const userName = String(nextSettings.userName || "").trim();
     const quickAddTemplateCardId = String(nextSettings.quickAdd?.templateCardId || "").trim();
     const quickAddTemplateCardName = String(nextSettings.quickAdd?.templateCardName || "").trim();
     const saved = saveSettings({
+      userName,
       boardId: nextSettings.boardId || "",
       boardName: nextSettings.boardName || "",
       refreshMinutes: Number(nextSettings.refreshMinutes) || 5,
@@ -1141,8 +1118,6 @@ function registerIpcHandlers() {
 
     return shell.openExternal(url);
   });
-
-  ipcMain.handle("window:alwaysOnTop", (_event, enabled) => setAlwaysOnTop(enabled));
 
   ipcMain.handle("window:viewMode", (_event, viewMode) => setViewMode(viewMode));
 

@@ -81,19 +81,31 @@ class TrelloClient {
       this.request(`/boards/${boardId}/lists`, {
         query: {
           filter: "open",
-          fields: "id,name"
+          fields: "id,name,pos"
         }
       }),
       this.getBoardCustomFields(boardId)
     ]);
 
     const timeSpentField = findTimeSpentField(customFields);
-    const listNames = new Map(lists.map((list) => [list.id, list.name]));
+    const listsById = new Map(
+      lists.map((list) => [
+        list.id,
+        {
+          name: list.name,
+          pos: Number(list.pos || 0)
+        }
+      ])
+    );
 
     return cards
-      .filter((card) => !isCompletedCard(card, listNames.get(card.idList)))
+      .filter((card) => !isCompletedCard(card, listsById.get(card.idList)?.name))
       .map((card) =>
-        normalizeCard(card, listNames.get(card.idList) || "Unknown list", timeSpentField)
+        normalizeCard(
+          card,
+          listsById.get(card.idList) || { name: "Unknown list", pos: Number.MAX_SAFE_INTEGER },
+          timeSpentField
+        )
       )
       .sort(compareCards);
   }
@@ -374,7 +386,7 @@ class TrelloClient {
   }
 }
 
-function normalizeCard(card, listName, timeSpentField) {
+function normalizeCard(card, list, timeSpentField) {
   return {
     id: card.id,
     name: card.name,
@@ -384,7 +396,8 @@ function normalizeCard(card, listName, timeSpentField) {
     lastActivity: card.dateLastActivity,
     url: card.url,
     listId: card.idList,
-    listName,
+    listName: list.name,
+    listPos: Number(list.pos || 0),
     labels: (card.labels || []).map((label) => ({
       id: label.id,
       name: label.name || label.color || "Label",

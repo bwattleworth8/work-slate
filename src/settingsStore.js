@@ -7,6 +7,7 @@ const LEGACY_APP_NAME = "Trello Focus Widget";
 let legacySettingsMigrationChecked = false;
 
 const DEFAULT_SETTINGS = {
+  userName: "",
   windowBounds: {
     width: 420,
     height: 720
@@ -24,7 +25,6 @@ const DEFAULT_SETTINGS = {
   floatingTimerBounds: {},
   viewMode: "planning",
   theme: "dark",
-  alwaysOnTop: false,
   refreshMinutes: 5,
   queues: {
     today: [],
@@ -106,6 +106,7 @@ function loadSettings() {
       today: sanitizeQueueIds(stored.queues?.today),
       week: sanitizeQueueIds(stored.queues?.week)
     },
+    userName: sanitizeUserName(stored.userName),
     quickAdd: sanitizeQuickAddSettings(stored.quickAdd)
   };
 }
@@ -127,6 +128,7 @@ function saveSettings(nextSettings) {
       ...current.queues,
       ...(nextSettings.queues || {})
     },
+    userName: sanitizeUserName(nextSettings.userName ?? current.userName),
     quickAdd: sanitizeQuickAddSettings({
       ...current.quickAdd,
       ...(nextSettings.quickAdd || {})
@@ -150,6 +152,10 @@ function sanitizeQuickAddSettings(quickAdd) {
     templateCardId: String(quickAdd?.templateCardId || "").trim(),
     templateCardName: String(quickAdd?.templateCardName || "").trim()
   };
+}
+
+function sanitizeUserName(userName) {
+  return String(userName || "").trim().slice(0, 80);
 }
 
 function encryptCredentials(credentials) {
@@ -210,7 +216,7 @@ function getPublicSettings() {
   const credentials = loadCredentials();
 
   return {
-    alwaysOnTop: settings.alwaysOnTop,
+    userName: settings.userName,
     viewMode: settings.viewMode,
     theme: settings.theme,
     refreshMinutes: settings.refreshMinutes,

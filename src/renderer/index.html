@@ -17,107 +17,95 @@
         <div class="brand-block">
           <div class="brand-mark" aria-hidden="true"></div>
           <div>
-            <p class="eyebrow">Daily Console</p>
             <h1>Work Slate</h1>
+            <p class="brand-tagline">Your console for work clarity.</p>
           </div>
         </div>
 
         <nav class="sidebar-nav" aria-label="Primary">
-          <button class="sidebar-link active" type="button" data-workspace="dashboard">
-            <span class="nav-icon home-icon" aria-hidden="true">
+          <button id="quickAddButton" class="sidebar-link active" type="button">
+            <span class="nav-icon create-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false">
-                <path d="M3 10.9 12 3.7l9 7.2" />
-                <path d="M5 10.2V20h14v-9.8" />
-                <path d="M10 20v-6h4v6" />
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
               </svg>
             </span>
-            <span>Home</span>
-          </button>
-          <button class="sidebar-link" type="button" data-workspace="focus">
-            <span class="nav-icon focus-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false">
-                <path d="M4 8V6a2 2 0 0 1 2-2h2" />
-                <path d="M16 4h2a2 2 0 0 1 2 2v2" />
-                <path d="M20 16v2a2 2 0 0 1-2 2h-2" />
-                <path d="M8 20H6a2 2 0 0 1-2-2v-2" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </span>
-            <span>Focus</span>
-          </button>
-          <button class="sidebar-link" type="button" data-workspace="today">
-            <span class="nav-icon list-nav-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false">
-                <path d="M8 6h13" />
-                <path d="M8 12h13" />
-                <path d="M8 18h13" />
-                <path d="M3 6h.01" />
-                <path d="M3 12h.01" />
-                <path d="M3 18h.01" />
-              </svg>
-            </span>
-            <span>Today</span>
-            <span id="sidebarTodayCount" class="count-badge">0</span>
-          </button>
-          <button class="sidebar-link" type="button" data-workspace="week">
-            <span class="nav-icon list-nav-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false">
-                <path d="M8 6h13" />
-                <path d="M8 12h13" />
-                <path d="M8 18h13" />
-                <path d="M3 6h.01" />
-                <path d="M3 12h.01" />
-                <path d="M3 18h.01" />
-              </svg>
-            </span>
-            <span>This Week</span>
-            <span id="sidebarWeekCount" class="count-badge">0</span>
-          </button>
-          <button class="sidebar-link" type="button" data-filter="all" data-workspace="all">
-            <span class="nav-icon list-nav-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false">
-                <path d="M8 6h13" />
-                <path d="M8 12h13" />
-                <path d="M8 18h13" />
-                <path d="M3 6h.01" />
-                <path d="M3 12h.01" />
-                <path d="M3 18h.01" />
-              </svg>
-            </span>
-            <span>All Tasks</span>
-            <span id="sidebarAllTasksCount" class="count-badge">0</span>
+            <span>Create Task</span>
           </button>
         </nav>
 
-        <div class="sidebar-divider"></div>
-
-        <section class="list-filter-panel" aria-label="Lists">
-          <div class="sidebar-section-heading">
-            <span>Lists</span>
-            <button id="clearListFiltersButton" class="clear-list-filters hidden" type="button">All</button>
+        <section class="sidebar-task-previews" aria-label="Task due dates">
+          <div class="sidebar-preview-section">
+            <div class="sidebar-link sidebar-alert-link overdue-alert">
+              <span class="nav-icon alert-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 8v5" />
+                  <path d="M12 17h.01" />
+                  <path d="M10.3 4.6 2.7 18a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 4.6a2 2 0 0 0-3.4 0Z" />
+                </svg>
+              </span>
+              <span>Overdue</span>
+              <span id="sidebarOverdueCount" class="count-badge">0</span>
+            </div>
+            <div id="sidebarOverdueTasks" class="sidebar-preview-list"></div>
           </div>
-          <div id="sidebarListFilter" class="list-filter"></div>
+
+          <div class="sidebar-preview-section">
+            <div class="sidebar-link sidebar-alert-link due-soon-alert">
+              <span class="nav-icon alert-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <circle cx="12" cy="12" r="8" />
+                  <path d="M12 8v4l3 2" />
+                </svg>
+              </span>
+              <span>Due Soon</span>
+              <span id="sidebarDueSoonCount" class="count-badge">0</span>
+            </div>
+            <div id="sidebarDueSoonTasks" class="sidebar-preview-list"></div>
+          </div>
         </section>
+
+        <div class="sidebar-spacer" aria-hidden="true"></div>
 
         <div class="sidebar-divider daily-summary-divider"></div>
 
-        <section class="daily-time-summary" aria-label="Daily time summary">
+        <section class="daily-time-summary" aria-label="Focus time summary">
           <div class="daily-summary-heading">
-            <p>Daily Summary</p>
-            <span>Today</span>
+            <p>Focus Summary</p>
+            <span>Live</span>
           </div>
-          <div class="daily-summary-stats">
-            <div class="daily-summary-stat">
-              <span id="dailySummaryTime" class="daily-summary-value">0m</span>
-              <span>Total focus time</span>
+          <div class="summary-period">
+            <p class="summary-period-title">Today</p>
+            <div class="daily-summary-stats">
+              <div class="daily-summary-stat">
+                <span id="dailySummaryTime" class="daily-summary-value">0m</span>
+                <span>Total focus time</span>
+              </div>
+              <div class="daily-summary-stat">
+                <span id="dailySummaryTasks" class="daily-summary-value">0</span>
+                <span id="dailySummaryTaskLabel">tasks worked</span>
+              </div>
+              <div class="daily-summary-stat">
+                <span id="dailySummaryCompleted" class="daily-summary-value">0</span>
+                <span id="dailySummaryCompletedLabel">tasks completed</span>
+              </div>
             </div>
-            <div class="daily-summary-stat">
-              <span id="dailySummaryTasks" class="daily-summary-value">0</span>
-              <span id="dailySummaryTaskLabel">tasks worked</span>
-            </div>
-            <div class="daily-summary-stat">
-              <span id="dailySummaryCompleted" class="daily-summary-value">0</span>
-              <span id="dailySummaryCompletedLabel">tasks completed</span>
+          </div>
+          <div class="summary-period">
+            <p class="summary-period-title">This Week</p>
+            <div class="daily-summary-stats">
+              <div class="daily-summary-stat">
+                <span id="weeklySummaryTime" class="daily-summary-value">0m</span>
+                <span>Total focus time</span>
+              </div>
+              <div class="daily-summary-stat">
+                <span id="weeklySummaryTasks" class="daily-summary-value">0</span>
+                <span id="weeklySummaryTaskLabel">tasks worked</span>
+              </div>
+              <div class="daily-summary-stat">
+                <span id="weeklySummaryCompleted" class="daily-summary-value">0</span>
+                <span id="weeklySummaryCompletedLabel">tasks completed</span>
+              </div>
             </div>
           </div>
         </section>
@@ -126,15 +114,15 @@
       <div class="workspace">
         <header class="titlebar">
           <div>
-            <h2 id="workspaceTitle">Home</h2>
-            <p id="workspaceSubtitle">Your daily console for planning, focus, and work clarity.</p>
+            <h2 id="workspaceTitle">Good Morning</h2>
           </div>
           <div class="window-actions">
             <button id="topModeButton" class="secondary-button mode-button compact-mode-button top-mode-button" type="button" data-view-mode="focus" title="Focus mode" aria-label="Focus mode">Focus Mode</button>
-            <button id="updateButton" class="secondary-button update-button hidden" type="button">Check for Updates</button>
+            <button id="updateButton" class="secondary-button update-button" type="button">Check for Updates</button>
             <button class="icon-button theme-toggle" type="button" data-theme-toggle title="Switch theme" aria-label="Switch theme">
               <span class="sr-only">Switch theme</span>
             </button>
+            <button id="refreshButton" class="secondary-button refresh-button" type="button">Refresh</button>
             <button id="settingsButton" class="icon-button settings-button" type="button" title="Settings" aria-label="Settings">Settings</button>
           </div>
         </header>
@@ -147,6 +135,12 @@
             </div>
 
             <form id="settingsForm" class="settings-form">
+              <label>
+                <span>Your name</span>
+                <input id="userNameInput" type="text" autocomplete="given-name" maxlength="80" />
+                <span class="field-hint">Used for the Home greeting.</span>
+              </label>
+
               <label>
                 <span>Trello API key</span>
                 <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" />
@@ -195,8 +189,8 @@
           </section>
 
           <section class="status-strip" aria-live="polite">
-            <p id="statusText">Ready</p>
             <p id="boardName"></p>
+            <p id="statusText">Ready</p>
           </section>
 
           <header class="focus-mode-header focus-mode-only">
@@ -296,24 +290,6 @@
             <button id="exitFocusModeButton" class="exit-focus-button mode-button" type="button" data-view-mode="planning">Exit Focus Mode</button>
             <p>You will return to the full app view.</p>
           </div>
-
-          <section class="toolbar" aria-label="Task controls">
-            <div class="segmented-control" role="tablist" aria-label="Task filter">
-              <button class="filter-button active" type="button" data-filter="all">All</button>
-              <button class="filter-button" type="button" data-filter="due-soon">Due Soon</button>
-              <button class="filter-button" type="button" data-filter="overdue">Overdue</button>
-              <button class="filter-button" type="button" data-filter="none">No date</button>
-            </div>
-
-            <div class="toolbar-actions">
-              <button id="quickAddButton" class="primary-button" type="button">Create Task</button>
-              <label class="toggle">
-                <input id="topToggle" type="checkbox" />
-                <span>Pin on top</span>
-              </label>
-              <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
-            </div>
-          </section>
 
           <div class="board-grid">
             <section id="todaySection" class="queue-section board-column">

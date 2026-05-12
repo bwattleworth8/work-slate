@@ -61,6 +61,7 @@ const elements = {
   topModeButton: document.querySelector("#topModeButton"),
   modeButtons: [...document.querySelectorAll("[data-view-mode]")],
   themeButtons: [...document.querySelectorAll("[data-theme-toggle]")],
+  userNameInput: document.querySelector("#userNameInput"),
   apiKeyInput: document.querySelector("#apiKeyInput"),
   tokenInput: document.querySelector("#tokenInput"),
   fetchBoardsButton: document.querySelector("#fetchBoardsButton"),
@@ -69,7 +70,6 @@ const elements = {
   quickAddTemplateSelect: document.querySelector("#quickAddTemplateSelect"),
   refreshQuickAddOptionsButton: document.querySelector("#refreshQuickAddOptionsButton"),
   securityStatus: document.querySelector("#securityStatus"),
-  topToggle: document.querySelector("#topToggle"),
   quickAddButton: document.querySelector("#quickAddButton"),
   refreshButton: document.querySelector("#refreshButton"),
   statusText: document.querySelector("#statusText"),
@@ -104,17 +104,20 @@ const elements = {
   weekQueueCount: document.querySelector("#weekQueueCount"),
   weekQueueEmpty: document.querySelector("#weekQueueEmpty"),
   weekQueueList: document.querySelector("#weekQueueList"),
-  sidebarTodayCount: document.querySelector("#sidebarTodayCount"),
-  sidebarWeekCount: document.querySelector("#sidebarWeekCount"),
-  sidebarAllTasksCount: document.querySelector("#sidebarAllTasksCount"),
-  sidebarListFilter: document.querySelector("#sidebarListFilter"),
-  clearListFiltersButton: document.querySelector("#clearListFiltersButton"),
+  sidebarOverdueCount: document.querySelector("#sidebarOverdueCount"),
+  sidebarOverdueTasks: document.querySelector("#sidebarOverdueTasks"),
+  sidebarDueSoonCount: document.querySelector("#sidebarDueSoonCount"),
+  sidebarDueSoonTasks: document.querySelector("#sidebarDueSoonTasks"),
   dailySummaryTime: document.querySelector("#dailySummaryTime"),
   dailySummaryTasks: document.querySelector("#dailySummaryTasks"),
   dailySummaryTaskLabel: document.querySelector("#dailySummaryTaskLabel"),
   dailySummaryCompleted: document.querySelector("#dailySummaryCompleted"),
   dailySummaryCompletedLabel: document.querySelector("#dailySummaryCompletedLabel"),
-  sidebarLinks: [...document.querySelectorAll(".sidebar-link")],
+  weeklySummaryTime: document.querySelector("#weeklySummaryTime"),
+  weeklySummaryTasks: document.querySelector("#weeklySummaryTasks"),
+  weeklySummaryTaskLabel: document.querySelector("#weeklySummaryTaskLabel"),
+  weeklySummaryCompleted: document.querySelector("#weeklySummaryCompleted"),
+  weeklySummaryCompletedLabel: document.querySelector("#weeklySummaryCompletedLabel"),
   workspaceTitle: document.querySelector("#workspaceTitle"),
   workspaceSubtitle: document.querySelector("#workspaceSubtitle"),
   taskCount: document.querySelector("#taskCount"),
@@ -200,7 +203,6 @@ function bindEvents() {
   elements.quickAddRouteAllButton.addEventListener("click", () => routeQuickAddTask("all"));
   elements.refreshButton.addEventListener("click", loadTasks);
   elements.updateButton.addEventListener("click", handleUpdateButtonClick);
-  elements.topToggle.addEventListener("change", toggleAlwaysOnTop);
   elements.startTimerButton.addEventListener("click", startFocusTimer);
   elements.stopTimerButton.addEventListener("click", stopFocusTimerAndSave);
   elements.clearFocusButton.addEventListener("click", clearFocus);
@@ -217,7 +219,6 @@ function bindEvents() {
   }
   elements.acceptNextButton.addEventListener("click", acceptNextSuggestion);
   elements.dismissNextButton.addEventListener("click", dismissNextSuggestion);
-  elements.clearListFiltersButton.addEventListener("click", clearListFilters);
 
   for (const button of elements.modeButtons) {
     button.addEventListener("click", () => setViewMode(button.dataset.viewMode));
@@ -233,10 +234,6 @@ function bindEvents() {
       state.workspaceView = "all";
       renderTasks();
     });
-  }
-
-  for (const link of elements.sidebarLinks) {
-    link.addEventListener("click", () => handleSidebarLink(link));
   }
 
   window.taskWidget.onRefreshRequested(loadTasks);
@@ -292,13 +289,7 @@ function renderUpdateStatus(status, options = {}) {
   }
 
   const isBusy = normalizedStatus.state === "checking" || normalizedStatus.state === "downloading";
-  const isActionable =
-    normalizedStatus.canCheck ||
-    normalizedStatus.canDownload ||
-    normalizedStatus.canInstall ||
-    isBusy;
-
-  elements.updateButton.classList.toggle("hidden", !isActionable);
+  elements.updateButton.classList.remove("hidden");
   elements.updateButton.disabled = isBusy;
   elements.updateButton.textContent = getUpdateButtonLabel(normalizedStatus);
   elements.updateButton.title = normalizedStatus.message || "Check for updates";
@@ -396,7 +387,7 @@ async function handleUpdateButtonClick() {
 }
 
 function syncSettingsUi() {
-  elements.topToggle.checked = Boolean(state.settings.alwaysOnTop);
+  elements.userNameInput.value = state.settings.userName || "";
   elements.refreshSelect.value = String(state.settings.refreshMinutes || 5);
   elements.boardName.textContent = state.settings.boardName || "";
   elements.securityStatus.textContent = state.settings.encryptionAvailable
@@ -410,6 +401,7 @@ function syncSettingsUi() {
   hydrateQuickAddLabelSelect();
   hydrateQuickAddPrioritySelect();
   hydrateQuickAddMemberSelect();
+  renderWorkspaceHeader();
   publishFloatingTimerState();
 }
 
@@ -1014,6 +1006,7 @@ async function saveSettings(event) {
     }
 
     state.settings = await window.taskWidget.saveSettings({
+      userName: elements.userNameInput.value.trim(),
       boardId,
       boardName: selectedOption?.textContent || "",
       refreshMinutes: Number(elements.refreshSelect.value),
@@ -1032,15 +1025,6 @@ async function saveSettings(event) {
     setStatus(error.message, true);
   } finally {
     setLoading(false);
-  }
-}
-
-async function toggleAlwaysOnTop() {
-  try {
-    state.settings = await window.taskWidget.setAlwaysOnTop(elements.topToggle.checked);
-    syncSettingsUi();
-  } catch (error) {
-    setStatus(error.message, true);
   }
 }
 
@@ -1102,8 +1086,8 @@ function renderTasks() {
 function renderWorkspaceHeader() {
   const copy = {
     dashboard: {
-      title: "Home",
-      subtitle: "Your daily console for planning, focus, and work clarity."
+      title: getHomeGreeting(),
+      subtitle: ""
     },
     today: {
       title: "Today",
@@ -1125,7 +1109,9 @@ function renderWorkspaceHeader() {
   const current = copy[state.workspaceView] || copy.dashboard;
 
   elements.workspaceTitle.textContent = current.title;
-  elements.workspaceSubtitle.textContent = current.subtitle;
+  if (elements.workspaceSubtitle) {
+    elements.workspaceSubtitle.textContent = current.subtitle;
+  }
 }
 
 function applyWorkspaceViewClass() {
@@ -1144,38 +1130,6 @@ function reconcileSelectedListFilters() {
       state.selectedListIds.delete(listId);
     }
   }
-}
-
-async function handleSidebarLink(link) {
-  const workspaceView = link.dataset.workspace;
-
-  if (!workspaceView) {
-    return;
-  }
-
-  if (link.dataset.filter) {
-    state.activeFilter = link.dataset.filter;
-  }
-
-  if (workspaceView === "focus") {
-    await setViewMode("focus");
-    return;
-  }
-
-  state.workspaceView = workspaceView;
-
-  if (state.settings?.viewMode === "focus") {
-    try {
-      state.settings = await window.taskWidget.setViewMode("planning");
-      syncSettingsUi();
-    } catch (error) {
-      setStatus(error.message, true);
-      return;
-    }
-  }
-
-  renderTasks();
-  setStatus(`${getWorkspaceViewLabel(workspaceView)} view.`);
 }
 
 function reconcileFocusWithTasks() {
@@ -1437,94 +1391,96 @@ function getQueueLabel(queueName) {
 }
 
 function renderSidebar() {
-  const todayCount = getVisibleQueuedTasks("today").length;
-  const weekCount = getVisibleQueuedTasks("week").length;
-  const allTasksCount = getVisibleAvailableTasks().length;
-
-  elements.sidebarTodayCount.textContent = String(todayCount);
-  elements.sidebarWeekCount.textContent = String(weekCount);
-  elements.sidebarAllTasksCount.textContent = String(allTasksCount);
-
-  for (const link of elements.sidebarLinks) {
-    link.classList.toggle("active", link.dataset.workspace === state.workspaceView);
-  }
-
-  renderListFilters();
+  renderSidebarTaskPreview(
+    elements.sidebarOverdueCount,
+    elements.sidebarOverdueTasks,
+    getSidebarOverdueTasks()
+  );
+  renderSidebarTaskPreview(
+    elements.sidebarDueSoonCount,
+    elements.sidebarDueSoonTasks,
+    getSidebarDueSoonTasks()
+  );
   renderDailyTimeSummary();
 }
 
+function renderSidebarTaskPreview(countElement, listElement, tasks) {
+  const previewTasks = tasks.slice(0, 3);
+
+  countElement.textContent = String(tasks.length);
+  listElement.innerHTML = "";
+  listElement.classList.toggle("hidden", previewTasks.length === 0);
+
+  for (const task of previewTasks) {
+    const item = document.createElement("button");
+    item.className = "sidebar-task-preview";
+    item.type = "button";
+    item.title = task.name;
+    item.addEventListener("click", () => openTask(task.url));
+
+    const title = document.createElement("span");
+    title.className = "sidebar-task-preview-title";
+    title.textContent = task.name;
+
+    const meta = document.createElement("span");
+    meta.className = "sidebar-task-preview-meta";
+    meta.textContent = `${formatDue(task)} - ${task.listName || "Unknown list"}`;
+
+    item.append(title, meta);
+    listElement.append(item);
+  }
+}
+
+function getSidebarOverdueTasks() {
+  return state.tasks
+    .filter((task) => task.status === "overdue")
+    .sort(compareTasksByDueDate);
+}
+
+function getSidebarDueSoonTasks() {
+  return state.tasks.filter(isDueSoon).sort(compareTasksByDueDate);
+}
+
+function compareTasksByDueDate(a, b) {
+  return getTaskDueTime(a) - getTaskDueTime(b);
+}
+
+function getTaskDueTime(task) {
+  const dueTime = new Date(task.due || "").getTime();
+  return Number.isFinite(dueTime) ? dueTime : Number.MAX_SAFE_INTEGER;
+}
+
 function renderDailyTimeSummary() {
-  if (!elements.dailySummaryTime || !elements.dailySummaryTasks || !elements.dailySummaryCompleted) {
+  if (!elements.dailySummaryTime || !elements.weeklySummaryTime) {
     return;
   }
 
-  const summary = getTodayFocusSummary();
-  elements.dailySummaryTime.textContent = formatSummaryDuration(summary.totalMinutes);
-  elements.dailySummaryTasks.textContent = String(summary.distinctTaskCount);
-  elements.dailySummaryCompleted.textContent = String(summary.completedTaskCount);
-
-  if (elements.dailySummaryTaskLabel) {
-    elements.dailySummaryTaskLabel.textContent =
-      summary.distinctTaskCount === 1 ? "task worked" : "tasks worked";
-  }
-
-  if (elements.dailySummaryCompletedLabel) {
-    elements.dailySummaryCompletedLabel.textContent =
-      summary.completedTaskCount === 1 ? "task completed" : "tasks completed";
-  }
+  renderSummaryPeriod("daily", getTodayFocusSummary());
+  renderSummaryPeriod("weekly", getCurrentWeekFocusSummary());
 }
 
-function getWorkspaceViewLabel(workspaceView) {
-  if (workspaceView === "today") {
-    return "Today";
-  }
+function renderSummaryPeriod(period, summary) {
+  const timeElement = elements[`${period}SummaryTime`];
+  const tasksElement = elements[`${period}SummaryTasks`];
+  const taskLabelElement = elements[`${period}SummaryTaskLabel`];
+  const completedElement = elements[`${period}SummaryCompleted`];
+  const completedLabelElement = elements[`${period}SummaryCompletedLabel`];
 
-  if (workspaceView === "week") {
-    return "This Week";
-  }
+  timeElement.textContent = formatSummaryDuration(summary.totalMinutes);
+  tasksElement.textContent = String(summary.distinctTaskCount);
+  completedElement.textContent = String(summary.completedTaskCount);
 
-  if (workspaceView === "all") {
-    return "All Tasks";
-  }
-
-  if (workspaceView === "dashboard") {
-    return "Home";
-  }
-
-  return "Focus";
+  taskLabelElement.textContent = summary.distinctTaskCount === 1 ? "task worked" : "tasks worked";
+  completedLabelElement.textContent =
+    summary.completedTaskCount === 1 ? "task completed" : "tasks completed";
 }
 
-function renderListFilters() {
-  elements.sidebarListFilter.innerHTML = "";
-  elements.clearListFiltersButton.classList.toggle("hidden", state.selectedListIds.size === 0);
+function getHomeGreeting(date = new Date()) {
+  const hour = date.getHours();
+  const greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
+  const userName = String(state.settings?.userName || "").trim();
 
-  const lists = getSidebarLists();
-  for (const [index, list] of lists.entries()) {
-    const item = document.createElement("button");
-    item.className = `list-filter-item list-color-${(index % 5) + 1}`;
-    item.type = "button";
-    item.setAttribute("aria-pressed", String(state.selectedListIds.has(list.id)));
-    item.classList.toggle("active", state.selectedListIds.has(list.id));
-    item.addEventListener("click", () => toggleListFilter(list.id, list.name));
-
-    const name = document.createElement("span");
-    name.className = "list-filter-name";
-    name.textContent = list.name;
-
-    const count = document.createElement("span");
-    count.className = "list-filter-count";
-    count.textContent = String(list.count);
-
-    item.append(name, count);
-    elements.sidebarListFilter.append(item);
-  }
-
-  if (lists.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "list-filter-empty";
-    empty.textContent = "No lists yet";
-    elements.sidebarListFilter.append(empty);
-  }
+  return userName ? `${greeting}, ${userName}` : greeting;
 }
 
 function getSidebarLists() {
@@ -1542,37 +1498,13 @@ function getSidebarLists() {
       listsById.set(task.listId, {
         id: task.listId,
         name: task.listName,
+        pos: Number(task.listPos || Number.MAX_SAFE_INTEGER),
         count: 1
       });
     }
   }
 
-  return [...listsById.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function toggleListFilter(listId, listName) {
-  if (state.selectedListIds.has(listId)) {
-    state.selectedListIds.delete(listId);
-  } else {
-    state.selectedListIds.add(listId);
-  }
-
-  renderTasks();
-  setStatus(
-    state.selectedListIds.has(listId)
-      ? `Filtering to ${listName}.`
-      : `${listName} filter removed.`
-  );
-}
-
-function clearListFilters() {
-  if (state.selectedListIds.size === 0) {
-    return;
-  }
-
-  state.selectedListIds.clear();
-  renderTasks();
-  setStatus("Showing all lists.");
+  return [...listsById.values()].sort((a, b) => a.pos - b.pos || a.name.localeCompare(b.name));
 }
 
 function getTaskListTitle() {
@@ -1857,12 +1789,21 @@ function recordFocusSession(task, minutes) {
 }
 
 function getTodayFocusSummary() {
-  const todayKey = getLocalDayKey(new Date());
+  const now = new Date();
+  return getFocusSummaryForRange(getLocalDayStart(now), now);
+}
+
+function getCurrentWeekFocusSummary() {
+  const now = new Date();
+  return getFocusSummaryForRange(getCurrentWeekStart(now), now);
+}
+
+function getFocusSummaryForRange(startDate, endDate) {
   const distinctTaskIds = new Set();
   let totalMinutes = 0;
 
   for (const session of loadFocusSessions()) {
-    if (getFocusSessionDayKey(session) !== todayKey) {
+    if (!isDayKeyInRange(getFocusSessionDayKey(session), startDate, endDate)) {
       continue;
     }
 
@@ -1870,7 +1811,7 @@ function getTodayFocusSummary() {
     distinctTaskIds.add(session.cardId);
   }
 
-  const activeSession = getActiveFocusSessionSummary(todayKey);
+  const activeSession = getActiveFocusSessionSummary(startDate, endDate);
   if (activeSession.minutes > 0) {
     totalMinutes += activeSession.minutes;
     distinctTaskIds.add(activeSession.cardId);
@@ -1879,11 +1820,11 @@ function getTodayFocusSummary() {
   return {
     totalMinutes,
     distinctTaskCount: distinctTaskIds.size,
-    completedTaskCount: getCompletedTaskCountForDay(todayKey)
+    completedTaskCount: getCompletedTaskCountForRange(startDate, endDate)
   };
 }
 
-function getActiveFocusSessionSummary(todayKey) {
+function getActiveFocusSessionSummary(startDate, endDate) {
   if (!state.timer.isRunning || !state.focusTask?.id) {
     return {
       cardId: null,
@@ -1892,12 +1833,11 @@ function getActiveFocusSessionSummary(todayKey) {
   }
 
   const startedAt = new Date(state.timer.startedAt);
-  const todayStart = getLocalDayStart(new Date());
-  const elapsedMs = getTimerElapsedMs();
-  const activeTodayMs =
-    getLocalDayKey(startedAt) === todayKey ? elapsedMs : Date.now() - todayStart.getTime();
+  const activeStartMs = Math.max(startedAt.getTime(), startDate.getTime());
+  const activeEndMs = Math.min(Date.now(), endDate.getTime());
+  const activeMs = activeEndMs - activeStartMs;
 
-  if (activeTodayMs <= 0) {
+  if (activeMs <= 0) {
     return {
       cardId: null,
       minutes: 0
@@ -1906,7 +1846,7 @@ function getActiveFocusSessionSummary(todayKey) {
 
   return {
     cardId: state.focusTask.id,
-    minutes: Math.max(1, Math.ceil(activeTodayMs / 60000))
+    minutes: Math.max(1, Math.ceil(activeMs / 60000))
   };
 }
 
@@ -1974,8 +1914,10 @@ function recordCompletedTask(task) {
   saveCompletedTasks(completedTasks.slice(-MAX_STORED_COMPLETED_TASKS));
 }
 
-function getCompletedTaskCountForDay(dayKey) {
-  return loadCompletedTasks().filter((task) => getCompletedTaskDayKey(task) === dayKey).length;
+function getCompletedTaskCountForRange(startDate, endDate) {
+  return loadCompletedTasks().filter((task) =>
+    isDayKeyInRange(getCompletedTaskDayKey(task), startDate, endDate)
+  ).length;
 }
 
 function loadCompletedTasks() {
@@ -2053,6 +1995,23 @@ function getLocalDayStart(date) {
   const start = new Date(date);
   start.setHours(0, 0, 0, 0);
   return start;
+}
+
+function getCurrentWeekStart(date) {
+  const start = getLocalDayStart(date);
+  const daysSinceMonday = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - daysSinceMonday);
+  return start;
+}
+
+function isDayKeyInRange(dayKey, startDate, endDate) {
+  if (!dayKey) {
+    return false;
+  }
+
+  const startKey = getLocalDayKey(startDate);
+  const endKey = getLocalDayKey(endDate);
+  return dayKey >= startKey && dayKey <= endKey;
 }
 
 function resetTimer() {
@@ -2520,51 +2479,103 @@ function loadFocusNotes() {
 function renderTaskList(tasks) {
   elements.taskList.innerHTML = "";
 
-  for (const task of tasks) {
-    const item = document.createElement("article");
-    item.className = "task-item";
-    item.classList.toggle("active-focus", task.id === state.focusTask?.id);
+  for (const group of getTaskListGroups(tasks)) {
+    const groupElement = document.createElement("section");
+    groupElement.className = "task-list-group";
 
-    const completeCheckbox = createCompleteCheckbox(task, item);
+    const heading = document.createElement("div");
+    heading.className = "task-list-group-heading";
+
     const title = document.createElement("h3");
-    title.textContent = task.name;
+    title.textContent = group.name;
 
-    const meta = document.createElement("div");
-    meta.className = "task-meta";
-    renderMeta(meta, task);
+    const count = document.createElement("span");
+    count.className = "count-badge";
+    count.textContent = String(group.tasks.length);
 
-    const actions = document.createElement("div");
-    actions.className = "task-actions";
+    heading.append(title, count);
 
-    const todayButton = createActionButton(
-      isQueued("today", task.id) ? "Remove Today" : "Add Today",
-      "secondary-button",
-      () => toggleQueuedTask("today", task.id)
-    );
+    const cards = document.createElement("div");
+    cards.className = "task-list-group-cards";
 
-    const weekButton = createActionButton(
-      isQueued("week", task.id) ? "Remove Week" : "Add Week",
-      "secondary-button",
-      () => toggleQueuedTask("week", task.id)
-    );
+    for (const task of group.tasks) {
+      cards.append(renderTaskListItem(task));
+    }
 
-    const focusButton = document.createElement("button");
-    focusButton.className = "secondary-button";
-    focusButton.type = "button";
-    focusButton.textContent = task.id === state.focusTask?.id ? "Focused" : "Focus";
-    focusButton.disabled = state.timer.isRunning || state.timer.elapsedMs > 0;
-    focusButton.addEventListener("click", () => setFocusTask(task));
-
-    const openButton = document.createElement("button");
-    openButton.className = "secondary-button";
-    openButton.type = "button";
-    openButton.textContent = "Open";
-    openButton.addEventListener("click", () => openTask(task.url));
-
-    actions.append(todayButton, weekButton, focusButton, openButton);
-    item.append(completeCheckbox, title, meta, actions);
-    elements.taskList.append(item);
+    groupElement.append(heading, cards);
+    elements.taskList.append(groupElement);
   }
+}
+
+function renderTaskListItem(task) {
+  const item = document.createElement("article");
+  item.className = "task-item";
+  item.classList.toggle("active-focus", task.id === state.focusTask?.id);
+
+  const completeCheckbox = createCompleteCheckbox(task, item);
+  const title = document.createElement("h3");
+  title.textContent = task.name;
+
+  const meta = document.createElement("div");
+  meta.className = "task-meta";
+  renderMeta(meta, task);
+
+  const actions = document.createElement("div");
+  actions.className = "task-actions";
+
+  const todayButton = createActionButton(
+    isQueued("today", task.id) ? "Remove Today" : "Add Today",
+    "secondary-button",
+    () => toggleQueuedTask("today", task.id)
+  );
+
+  const weekButton = createActionButton(
+    isQueued("week", task.id) ? "Remove Week" : "Add Week",
+    "secondary-button",
+    () => toggleQueuedTask("week", task.id)
+  );
+
+  const focusButton = document.createElement("button");
+  focusButton.className = "secondary-button";
+  focusButton.type = "button";
+  focusButton.textContent = task.id === state.focusTask?.id ? "Focused" : "Focus";
+  focusButton.disabled = state.timer.isRunning || state.timer.elapsedMs > 0;
+  focusButton.addEventListener("click", () => setFocusTask(task));
+
+  const openButton = document.createElement("button");
+  openButton.className = "secondary-button";
+  openButton.type = "button";
+  openButton.textContent = "Open";
+  openButton.addEventListener("click", () => openTask(task.url));
+
+  actions.append(todayButton, weekButton, focusButton, openButton);
+  item.append(completeCheckbox, title, meta, actions);
+  return item;
+}
+
+function getTaskListGroups(tasks) {
+  const groupsByList = new Map();
+
+  for (const task of tasks) {
+    const listId = task.listId || `unknown:${task.listName || "Unknown list"}`;
+    const listPos = Number(task.listPos);
+    const group = groupsByList.get(listId);
+
+    if (group) {
+      group.tasks.push(task);
+      continue;
+    }
+
+    groupsByList.set(listId, {
+      id: listId,
+      name: task.listName || "Unknown list",
+      pos: Number.isFinite(listPos) ? listPos : Number.MAX_SAFE_INTEGER,
+      order: groupsByList.size,
+      tasks: [task]
+    });
+  }
+
+  return [...groupsByList.values()].sort((a, b) => a.pos - b.pos || a.order - b.order);
 }
 
 function renderMeta(container, task) {
