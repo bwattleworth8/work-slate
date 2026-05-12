@@ -26,6 +26,7 @@ const state = {
   },
   quickAddOptionsBoardId: "",
   pendingQuickAddTask: null,
+  updateStatus: null,
   queueDrag: {
     queueName: null,
     cardId: null
@@ -56,6 +57,7 @@ const elements = {
   setupPanel: document.querySelector("#setupPanel"),
   settingsForm: document.querySelector("#settingsForm"),
   settingsButton: document.querySelector("#settingsButton"),
+  updateButton: document.querySelector("#updateButton"),
   topModeButton: document.querySelector("#topModeButton"),
   modeButtons: [...document.querySelectorAll("[data-view-mode]")],
   themeButtons: [...document.querySelectorAll("[data-theme-toggle]")],
@@ -142,6 +144,7 @@ async function init() {
   bindEvents();
   state.settings = await window.taskWidget.getSettings();
   syncSettingsUi();
+  await syncUpdateStatus();
 
   if (!state.settings.hasCredentials || !state.settings.boardId) {
     if (state.settings.viewMode === "focus") {
@@ -196,6 +199,7 @@ function bindEvents() {
   elements.quickAddRouteWeekButton.addEventListener("click", () => routeQuickAddTask("week"));
   elements.quickAddRouteAllButton.addEventListener("click", () => routeQuickAddTask("all"));
   elements.refreshButton.addEventListener("click", loadTasks);
+  elements.updateButton.addEventListener("click", handleUpdateButtonClick);
   elements.topToggle.addEventListener("change", toggleAlwaysOnTop);
   elements.startTimerButton.addEventListener("click", startFocusTimer);
   elements.stopTimerButton.addEventListener("click", stopFocusTimerAndSave);
@@ -255,6 +259,140 @@ function bindEvents() {
     };
     syncSettingsUi();
   });
+
+  window.taskWidget.onUpdateStatus((status) => {
+    renderUpdateStatus(status, { showMessage: true });
+  });
+}
+
+async function syncUpdateStatus() {
+  if (!window.taskWidget?.getUpdateStatus) {
+    return;
+  }
+
+  try {
+    renderUpdateStatus(await window.taskWidget.getUpdateStatus());
+  } catch {
+    renderUpdateStatus({
+      state: "unavailable",
+      message: "Updates are unavailable in this build.",
+      canCheck: false,
+      canDownload: false,
+      canInstall: false
+    });
+  }
+}
+
+function renderUpdateStatus(status, options = {}) {
+  const normalizedStatus = normalizeUpdateStatus(status);
+  state.updateStatus = normalizedStatus;
+
+  if (!elements.updateButton) {
+    return;
+  }
+
+  const isBusy = normalizedStatus.state === "checking" || normalizedStatus.state === "downloading";
+  const isActionable =
+    normalizedStatus.canCheck ||
+    normalizedStatus.canDownload ||
+    normalizedStatus.canInstall ||
+    isBusy;
+
+  elements.updateButton.classList.toggle("hidden", !isActionable);
+  elements.updateButton.disabled = isBusy;
+  elements.updateButton.textContent = getUpdateButtonLabel(normalizedStatus);
+  elements.updateButton.title = normalizedStatus.message || "Check for updates";
+  elements.updateButton.setAttribute("aria-label", elements.updateButton.title);
+
+  if (options.showMessage && shouldShowUpdateStatusMessage(normalizedStatus)) {
+    setStatus(normalizedStatus.message, normalizedStatus.state === "error");
+  }
+}
+
+function normalizeUpdateStatus(status) {
+  return {
+    state: String(status?.state || "unavailable"),
+    message: String(status?.message || ""),
+    currentVersion: String(status?.currentVersion || ""),
+    updateVersion: String(status?.updateVersion || ""),
+    releaseDate: String(status?.releaseDate || ""),
+    progress: status?.progress || null,
+    canCheck: Boolean(status?.canCheck),
+    canDownload: Boolean(status?.canDownload),
+    canInstall: Boolean(status?.canInstall)
+  };
+}
+
+function getUpdateButtonLabel(status) {
+  if (status.canInstall) {
+    return "Restart to Update";
+  }
+
+  if (status.canDownload) {
+    return "Download Update";
+  }
+
+  if (status.state === "checking") {
+    return "Checking...";
+  }
+
+  if (status.state === "downloading") {
+    const percent = Math.max(0, Math.min(100, Number(status.progress?.percent || 0)));
+    return `Downloading ${Math.round(percent)}%`;
+  }
+
+  return "Check for Updates";
+}
+
+function shouldShowUpdateStatusMessage(status) {
+  return ["checking", "available", "not-available", "downloaded", "downloading", "error"].includes(
+    status.state
+  );
+}
+
+async function handleUpdateButtonClick() {
+  const status = state.updateStatus || {};
+
+  try {
+    if (status.canInstall) {
+      await window.taskWidget.installUpdate();
+      return;
+    }
+
+    if (status.canDownload) {
+      renderUpdateStatus(
+        {
+          ...status,
+          state: "downloading",
+          message: "Downloading update...",
+          progress: {
+            percent: 0
+          },
+          canCheck: false,
+          canDownload: false
+        },
+        { showMessage: true }
+      );
+      await window.taskWidget.downloadUpdate();
+      return;
+    }
+
+    renderUpdateStatus(
+      {
+        ...status,
+        state: "checking",
+        message: "Checking for updates...",
+        canCheck: false,
+        canDownload: false,
+        canInstall: false
+      },
+      { showMessage: true }
+    );
+    await window.taskWidget.checkForUpdates();
+  } catch (error) {
+    setStatus(error.message, true);
+    await syncUpdateStatus();
+  }
 }
 
 function syncSettingsUi() {
@@ -272,6 +410,7 @@ function syncSettingsUi() {
   hydrateQuickAddLabelSelect();
   hydrateQuickAddPrioritySelect();
   hydrateQuickAddMemberSelect();
+  publishFloatingTimerState();
 }
 
 function applyViewModeClass(viewMode) {
@@ -2067,6 +2206,7 @@ function updateTimerDisplay() {
 
   if (!state.focusTask) {
     renderDailyTimeSummary();
+    publishFloatingTimerState();
     return;
   }
 
@@ -2087,6 +2227,25 @@ function updateTimerDisplay() {
   elements.clearFocusButton.disabled = state.timer.isRunning || hasElapsed;
   elements.completeFocusButton.disabled = state.timer.isRunning || hasElapsed;
   renderDailyTimeSummary();
+  publishFloatingTimerState();
+}
+
+function publishFloatingTimerState() {
+  if (!window.taskWidget?.updateFocusTimer) {
+    return;
+  }
+
+  window.taskWidget.updateFocusTimer({
+    hasFocusTask: Boolean(state.focusTask),
+    taskName: state.focusTask?.name || "",
+    mode: normalizeTimerMode(state.timer.mode),
+    theme: state.settings?.theme || "dark",
+    isRunning: state.timer.isRunning,
+    startedAt: state.timer.isRunning ? state.timer.startedAt : null,
+    elapsedMs: state.timer.isRunning ? state.timer.elapsedMs : getTimerElapsedMs(),
+    durationMs: getTimerDurationMs(),
+    completed: state.timer.completed
+  });
 }
 
 function getFilteredTasks() {

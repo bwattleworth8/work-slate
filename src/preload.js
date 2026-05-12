@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld("taskWidget", {
   setAlwaysOnTop: (enabled) => ipcRenderer.invoke("window:alwaysOnTop", enabled),
   setViewMode: (viewMode) => ipcRenderer.invoke("window:viewMode", viewMode),
   setTheme: (theme) => ipcRenderer.invoke("settings:theme", theme),
+  getUpdateStatus: () => ipcRenderer.invoke("appUpdate:getStatus"),
+  checkForUpdates: () => ipcRenderer.invoke("appUpdate:check"),
+  downloadUpdate: () => ipcRenderer.invoke("appUpdate:download"),
+  installUpdate: () => ipcRenderer.invoke("appUpdate:install"),
+  updateFocusTimer: (timerState) => ipcRenderer.send("focusTimer:update", timerState),
   addToQueue: (queueName, cardId) => ipcRenderer.invoke("queues:add", queueName, cardId),
   removeFromQueue: (queueName, cardId) => ipcRenderer.invoke("queues:remove", queueName, cardId),
   moveQueueItem: (queueName, cardId, direction) =>
@@ -43,5 +48,10 @@ contextBridge.exposeInMainWorld("taskWidget", {
     const listener = (_event, settings) => callback(settings);
     ipcRenderer.on("theme:changed", listener);
     return () => ipcRenderer.removeListener("theme:changed", listener);
+  },
+  onUpdateStatus: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on("appUpdate:status", listener);
+    return () => ipcRenderer.removeListener("appUpdate:status", listener);
   }
 });

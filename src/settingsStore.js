@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
       height: 780
     }
   },
+  floatingTimerBounds: {},
   viewMode: "planning",
   theme: "dark",
   alwaysOnTop: false,

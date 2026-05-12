@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, nativeTheme, screen, shell } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("node:path");
 const {
   getPublicSettings,
@@ -10,9 +11,14 @@ const {
 const { TrelloClient } = require("./trelloClient");
 
 let mainWindow;
+let focusTimerWindow;
 let tray;
 let applyingWindowModeBounds = false;
 let windowModeBoundsSaveTimer = null;
+let floatingTimerBoundsSaveTimer = null;
+let latestFocusTimerState = null;
+let updaterSetupComplete = false;
+let currentUpdateStatus = null;
 
 const APP_ICON_DATA_URL =
   "data:image/png;base64,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";
@@ -31,6 +37,248 @@ const WINDOW_MODES = {
     minHeight: 420
   }
 };
+
+const FLOATING_TIMER_WINDOW = {
+  width: 156,
+  height: 62,
+  margin: 12
+};
+
+const ACTIVE_UPDATE_STATES = new Set(["checking", "downloading"]);
+const UPDATE_RELEASE_ACCESS_MESSAGE =
+  "Could not read published GitHub releases. Make sure bwattleworth8/work-slate is public and the release is published, not draft.";
+
+function getUpdateVersion(info) {
+  return String(info?.version || info?.tag || "").trim();
+}
+
+function getUpdateReleaseDate(info) {
+  return String(info?.releaseDate || "").trim();
+}
+
+function formatUpdateError(error) {
+  const message = String(error?.message || error || "Unknown update error").trim();
+  return message || "Unknown update error";
+}
+
+function formatUpdateFailure(prefix, error) {
+  const message = formatUpdateError(error);
+
+  if (
+    /\b404\b/.test(message) &&
+    /github\.com\/bwattleworth8\/work-slate\/releases\.atom/.test(message)
+  ) {
+    return `${prefix}: ${UPDATE_RELEASE_ACCESS_MESSAGE}`;
+  }
+
+  const firstLine = message.split(/\r?\n/).find(Boolean) || message;
+  return `${prefix}: ${firstLine}`;
+}
+
+function buildUpdateStatus(overrides = {}) {
+  const current = currentUpdateStatus || {};
+  const defaultState = app.isPackaged ? "idle" : "unavailable";
+  const defaultMessage = app.isPackaged
+    ? "Ready to check for updates."
+    : "Updates are available in packaged builds.";
+  const state = overrides.state || current.state || defaultState;
+  const canCheck = app.isPackaged && !ACTIVE_UPDATE_STATES.has(state);
+
+  return {
+    state,
+    message: overrides.message || current.message || defaultMessage,
+    currentVersion: app.getVersion(),
+    updateVersion: overrides.updateVersion ?? current.updateVersion ?? "",
+    releaseDate: overrides.releaseDate ?? current.releaseDate ?? "",
+    progress: overrides.progress === undefined ? current.progress || null : overrides.progress,
+    canCheck: overrides.canCheck ?? canCheck,
+    canDownload: overrides.canDownload ?? false,
+    canInstall: overrides.canInstall ?? false
+  };
+}
+
+function setUpdateStatus(overrides = {}) {
+  currentUpdateStatus = buildUpdateStatus(overrides);
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("appUpdate:status", currentUpdateStatus);
+  }
+
+  return currentUpdateStatus;
+}
+
+function getCurrentUpdateStatus() {
+  return currentUpdateStatus || buildUpdateStatus();
+}
+
+function setupAutoUpdater() {
+  if (updaterSetupComplete) {
+    return;
+  }
+
+  updaterSetupComplete = true;
+  setUpdateStatus();
+
+  if (!app.isPackaged) {
+    return;
+  }
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on("checking-for-update", () => {
+    setUpdateStatus({
+      state: "checking",
+      message: "Checking for updates...",
+      progress: null,
+      canCheck: false
+    });
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    const updateVersion = getUpdateVersion(info);
+
+    setUpdateStatus({
+      state: "available",
+      message: updateVersion
+        ? `Update ${updateVersion} is available.`
+        : "An update is available.",
+      updateVersion,
+      releaseDate: getUpdateReleaseDate(info),
+      progress: null,
+      canCheck: true,
+      canDownload: true
+    });
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    setUpdateStatus({
+      state: "not-available",
+      message: "Work Slate is up to date.",
+      updateVersion: "",
+      releaseDate: "",
+      progress: null,
+      canCheck: true
+    });
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    const percent = Math.max(0, Math.min(100, Number(progress?.percent || 0)));
+
+    setUpdateStatus({
+      state: "downloading",
+      message: `Downloading update ${Math.round(percent)}%...`,
+      progress: {
+        percent
+      },
+      canCheck: false
+    });
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    const updateVersion = getUpdateVersion(info);
+
+    setUpdateStatus({
+      state: "downloaded",
+      message: updateVersion
+        ? `Update ${updateVersion} is ready. Restart to install.`
+        : "Update is ready. Restart to install.",
+      updateVersion,
+      releaseDate: getUpdateReleaseDate(info),
+      progress: null,
+      canCheck: true,
+      canInstall: true
+    });
+  });
+
+  autoUpdater.on("error", (error) => {
+    setUpdateStatus({
+      state: "error",
+      message: formatUpdateFailure("Update failed", error),
+      progress: null,
+      canCheck: true
+    });
+  });
+}
+
+async function checkForAppUpdates() {
+  const status = getCurrentUpdateStatus();
+
+  if (!app.isPackaged) {
+    return setUpdateStatus({
+      state: "unavailable",
+      message: "Updates are available after building the packaged app.",
+      canCheck: false
+    });
+  }
+
+  if (ACTIVE_UPDATE_STATES.has(status.state)) {
+    return status;
+  }
+
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (error) {
+    return setUpdateStatus({
+      state: "error",
+      message: formatUpdateFailure("Update check failed", error),
+      progress: null,
+      canCheck: true
+    });
+  }
+
+  return getCurrentUpdateStatus();
+}
+
+async function downloadAppUpdate() {
+  const status = getCurrentUpdateStatus();
+
+  if (!status.canDownload) {
+    return setUpdateStatus({
+      state: "error",
+      message: "No update is ready to download.",
+      canCheck: true
+    });
+  }
+
+  try {
+    setUpdateStatus({
+      state: "downloading",
+      message: "Downloading update...",
+      progress: {
+        percent: 0
+      },
+      canCheck: false
+    });
+    await autoUpdater.downloadUpdate();
+  } catch (error) {
+    return setUpdateStatus({
+      state: "error",
+      message: formatUpdateFailure("Update download failed", error),
+      progress: null,
+      canCheck: true
+    });
+  }
+
+  return getCurrentUpdateStatus();
+}
+
+function installAppUpdate() {
+  const status = getCurrentUpdateStatus();
+
+  if (!status.canInstall) {
+    return setUpdateStatus({
+      state: "error",
+      message: "No downloaded update is ready to install.",
+      canCheck: true
+    });
+  }
+
+  saveWindowBounds();
+  app.isQuitting = true;
+  autoUpdater.quitAndInstall(false, true);
+  return status;
+}
 
 function createAppIcon(size) {
   const icon = nativeImage.createFromDataURL(APP_ICON_DATA_URL);
@@ -64,6 +312,9 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  mainWindow.webContents.once("did-finish-load", () => {
+    setUpdateStatus();
+  });
   mainWindow.setMenuBarVisibility(false);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\/trello\.com\//.test(String(url))) {
@@ -77,8 +328,21 @@ function createWindow() {
     saveWindowBounds();
   });
 
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+    closeFloatingTimerWindow();
+  });
+
   mainWindow.on("resize", saveWindowBounds);
   mainWindow.on("move", saveWindowBounds);
+  mainWindow.on("blur", updateFloatingTimerVisibility);
+  mainWindow.on("focus", hideFloatingTimerWindow);
+  mainWindow.on("minimize", updateFloatingTimerVisibility);
+  mainWindow.on("restore", updateFloatingTimerVisibility);
+
+  if (viewMode === "planning") {
+    maximizePlanningWindow();
+  }
 }
 
 function saveWindowBounds() {
@@ -166,8 +430,207 @@ function getDisplayWorkArea(currentBounds = {}, savedBounds = {}) {
   return screen.getDisplayMatching(displayBounds).workArea;
 }
 
+function createFloatingTimerWindow() {
+  if (focusTimerWindow && !focusTimerWindow.isDestroyed()) {
+    return focusTimerWindow;
+  }
+
+  const bounds = getFloatingTimerInitialBounds();
+
+  focusTimerWindow = new BrowserWindow({
+    width: FLOATING_TIMER_WINDOW.width,
+    height: FLOATING_TIMER_WINDOW.height,
+    x: bounds.x,
+    y: bounds.y,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    transparent: true,
+    hasShadow: false,
+    title: "Work Slate Timer",
+    icon: createAppIcon(),
+    show: false,
+    backgroundColor: "#00000000",
+    webPreferences: {
+      preload: path.join(__dirname, "floatingTimerPreload.js"),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  focusTimerWindow.loadFile(path.join(__dirname, "renderer", "floating-timer.html"));
+  focusTimerWindow.setAlwaysOnTop(true, "floating");
+  focusTimerWindow.on("move", saveFloatingTimerBounds);
+  focusTimerWindow.on("closed", () => {
+    focusTimerWindow = null;
+  });
+  focusTimerWindow.webContents.on("did-finish-load", sendFloatingTimerState);
+
+  return focusTimerWindow;
+}
+
+function getFloatingTimerInitialBounds() {
+  const settings = loadSettings();
+  const savedBounds = settings.floatingTimerBounds || {};
+  const mainBounds =
+    mainWindow && !mainWindow.isDestroyed()
+      ? mainWindow.getBounds()
+      : {
+          x: 0,
+          y: 0,
+          width: FLOATING_TIMER_WINDOW.width,
+          height: FLOATING_TIMER_WINDOW.height
+        };
+  const matchingBounds = {
+    x: Number.isFinite(savedBounds.x) ? savedBounds.x : mainBounds.x,
+    y: Number.isFinite(savedBounds.y) ? savedBounds.y : mainBounds.y,
+    width: FLOATING_TIMER_WINDOW.width,
+    height: FLOATING_TIMER_WINDOW.height
+  };
+  const workArea = screen.getDisplayMatching(matchingBounds).workArea;
+  const defaultBounds = {
+    x: workArea.x + FLOATING_TIMER_WINDOW.margin,
+    y:
+      workArea.y +
+      workArea.height -
+      FLOATING_TIMER_WINDOW.height -
+      FLOATING_TIMER_WINDOW.margin,
+    width: FLOATING_TIMER_WINDOW.width,
+    height: FLOATING_TIMER_WINDOW.height
+  };
+
+  return clampFloatingTimerBounds(
+    {
+      ...defaultBounds,
+      x: Number.isFinite(savedBounds.x) ? savedBounds.x : defaultBounds.x,
+      y: Number.isFinite(savedBounds.y) ? savedBounds.y : defaultBounds.y
+    },
+    workArea
+  );
+}
+
+function clampFloatingTimerBounds(bounds, workArea) {
+  const maxX = workArea.x + workArea.width - FLOATING_TIMER_WINDOW.width;
+  const maxY = workArea.y + workArea.height - FLOATING_TIMER_WINDOW.height;
+
+  return {
+    x: Math.min(Math.max(bounds.x, workArea.x), Math.max(workArea.x, maxX)),
+    y: Math.min(Math.max(bounds.y, workArea.y), Math.max(workArea.y, maxY))
+  };
+}
+
+function saveFloatingTimerBounds() {
+  if (!focusTimerWindow || focusTimerWindow.isDestroyed()) {
+    return;
+  }
+
+  if (floatingTimerBoundsSaveTimer) {
+    clearTimeout(floatingTimerBoundsSaveTimer);
+  }
+
+  floatingTimerBoundsSaveTimer = setTimeout(() => {
+    floatingTimerBoundsSaveTimer = null;
+
+    if (!focusTimerWindow || focusTimerWindow.isDestroyed()) {
+      return;
+    }
+
+    const bounds = focusTimerWindow.getBounds();
+    saveSettings({
+      floatingTimerBounds: {
+        x: bounds.x,
+        y: bounds.y
+      }
+    });
+  }, 180);
+}
+
+function showFloatingTimerWindow() {
+  const timerWindow = createFloatingTimerWindow();
+  sendFloatingTimerState();
+
+  if (timerWindow.isVisible()) {
+    return;
+  }
+
+  if (typeof timerWindow.showInactive === "function") {
+    timerWindow.showInactive();
+  } else {
+    timerWindow.show();
+  }
+}
+
+function hideFloatingTimerWindow() {
+  if (!focusTimerWindow || focusTimerWindow.isDestroyed() || !focusTimerWindow.isVisible()) {
+    return;
+  }
+
+  focusTimerWindow.hide();
+}
+
+function closeFloatingTimerWindow() {
+  if (!focusTimerWindow || focusTimerWindow.isDestroyed()) {
+    return;
+  }
+
+  focusTimerWindow.close();
+}
+
+function updateFloatingTimerVisibility() {
+  if (shouldShowFloatingTimer()) {
+    showFloatingTimerWindow();
+  } else {
+    hideFloatingTimerWindow();
+  }
+}
+
+function shouldShowFloatingTimer() {
+  return Boolean(
+    mainWindow &&
+      !mainWindow.isDestroyed() &&
+      normalizeViewMode(loadSettings().viewMode) === "focus" &&
+      !mainWindow.isFocused() &&
+      latestFocusTimerState?.hasFocusTask
+  );
+}
+
+function normalizeFocusTimerState(timerState) {
+  const elapsedMs = Number(timerState?.elapsedMs);
+  const durationMs = Number(timerState?.durationMs);
+  const startedAt = Number(timerState?.startedAt);
+
+  return {
+    hasFocusTask: Boolean(timerState?.hasFocusTask),
+    taskName: String(timerState?.taskName || "").slice(0, 180),
+    mode: String(timerState?.mode || "stopwatch"),
+    theme: normalizeTheme(timerState?.theme),
+    isRunning: Boolean(timerState?.isRunning),
+    startedAt: Number.isFinite(startedAt) && startedAt > 0 ? startedAt : null,
+    elapsedMs: Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0,
+    durationMs: Number.isFinite(durationMs) && durationMs > 0 ? durationMs : null,
+    completed: Boolean(timerState?.completed)
+  };
+}
+
+function sendFloatingTimerState() {
+  if (!focusTimerWindow || focusTimerWindow.isDestroyed()) {
+    return;
+  }
+
+  focusTimerWindow.webContents.send("floatingTimer:state", latestFocusTimerState);
+}
+
 function resizeWindowForMode(viewMode) {
   if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  if (viewMode === "planning") {
+    maximizePlanningWindow();
     return;
   }
 
@@ -192,6 +655,26 @@ function resizeWindowForMode(viewMode) {
   if (viewMode === "focus") {
     setTimeout(enforceFocusModeBounds, 150);
   }
+}
+
+function maximizePlanningWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  if (mainWindow.isFullScreen()) {
+    mainWindow.setFullScreen(false);
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  const modeConfig = WINDOW_MODES.planning;
+  applyingWindowModeBounds = true;
+  mainWindow.setMinimumSize(modeConfig.minWidth, modeConfig.minHeight);
+  mainWindow.maximize();
+  saveWindowBoundsAfterModeResize();
 }
 
 function restoreWindowForExplicitBounds() {
@@ -337,6 +820,7 @@ function showMainWindow() {
 
   mainWindow.show();
   mainWindow.focus();
+  hideFloatingTimerWindow();
 }
 
 function setAlwaysOnTop(enabled) {
@@ -370,6 +854,7 @@ function setViewMode(viewMode) {
 
   const publicSettings = getPublicSettings();
   mainWindow?.webContents.send("viewMode:changed", publicSettings);
+  updateFloatingTimerVisibility();
 
   if (tray) {
     tray.setContextMenu(buildTrayMenu());
@@ -663,6 +1148,27 @@ function registerIpcHandlers() {
 
   ipcMain.handle("settings:theme", (_event, theme) => setTheme(theme));
 
+  ipcMain.handle("appUpdate:getStatus", () => getCurrentUpdateStatus());
+
+  ipcMain.handle("appUpdate:check", () => checkForAppUpdates());
+
+  ipcMain.handle("appUpdate:download", () => downloadAppUpdate());
+
+  ipcMain.handle("appUpdate:install", () => installAppUpdate());
+
+  ipcMain.on("focusTimer:update", (_event, timerState) => {
+    latestFocusTimerState = normalizeFocusTimerState(timerState);
+    sendFloatingTimerState();
+    updateFloatingTimerVisibility();
+  });
+
+  ipcMain.handle("floatingTimer:getState", () => latestFocusTimerState);
+
+  ipcMain.handle("floatingTimer:openMainWindow", () => {
+    showMainWindow();
+    return true;
+  });
+
   ipcMain.handle("queues:add", (_event, queueName, cardId) => addCardToQueue(queueName, cardId));
 
   ipcMain.handle("queues:remove", (_event, queueName, cardId) =>
@@ -692,8 +1198,15 @@ app.whenReady().then(() => {
   applyNativeTheme(loadSettings().theme);
   Menu.setApplicationMenu(null);
   registerIpcHandlers();
+  setupAutoUpdater();
   createWindow();
   createTray();
+
+  if (app.isPackaged) {
+    setTimeout(() => {
+      checkForAppUpdates();
+    }, 4000);
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

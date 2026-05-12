@@ -44,7 +44,40 @@ Build the Windows installer:
 npm run dist
 ```
 
-The installer is written to `dist/Work Slate Setup 0.1.0.exe`. This local installer is currently unsigned, so Windows may show a trust warning. `npm run pack` creates an unpacked Windows app in `dist/win-unpacked` for quick local inspection.
+The installer is written to `dist/Work-Slate-Setup-<version>.exe`. This local installer is currently unsigned, so Windows may show a trust warning. `npm run pack` creates an unpacked Windows app in `dist/win-unpacked` for quick local inspection.
+
+## How To Publish Updates
+
+Work Slate uses `electron-updater` with GitHub Releases. The packaged app checks for updates shortly after startup and also shows a **Check for Updates** button when update checks are available.
+
+For each shipped update:
+
+1. Bump the version in `package.json`, for example:
+
+   ```powershell
+   npm version patch --no-git-tag-version
+   ```
+
+2. Run validation:
+
+   ```powershell
+   npm run check
+   ```
+
+3. Build and publish the release artifacts:
+
+   ```powershell
+   $env:GH_TOKEN="your GitHub token"
+   npm run release
+   ```
+
+The release command publishes the installer and update metadata to the configured GitHub repository, `bwattleworth8/work-slate`. Installed copies can update only after the new release artifacts and generated `latest.yml` are available on a published, non-draft GitHub Release.
+
+If the app reports a 404 while checking for updates, confirm that:
+
+- `bwattleworth8/work-slate` is public, or the release assets are hosted somewhere public.
+- The target release is published, not saved as a draft.
+- The release contains `latest.yml`, the `.exe`, and the `.exe.blockmap` assets.
 
 ## Trello Setup
 
@@ -149,9 +182,11 @@ npm run icons
 npm run check
 npm run pack
 npm run dist
+npm run release
 ```
 
-`npm run icons` regenerates `build/icon.png` and `build/icon.ico` from the embedded app icon.
+`npm run icons` regenerates `build/icon.png` and `build/icon.ico` from the app checkmark icon definition.
 `npm run check` performs syntax checks for the Electron main process, preload bridge, settings store, Trello client, and renderer script.
 `npm run pack` builds an unpacked Windows app folder.
 `npm run dist` builds the local Windows installer with Electron Builder.
+`npm run release` builds the Windows installer and publishes update metadata to GitHub Releases.

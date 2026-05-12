@@ -1,6 +1,8 @@
 node_modules/
 dist/
 out/
+secrets/
+github_release_token
 *.log
 npm-debug.log*
 .DS_Store
