@@ -74,23 +74,17 @@ function render() {
   document.body.classList.toggle("is-paused", paused);
   document.body.classList.toggle("is-complete", complete);
 
-  elements.timerLabel.textContent = getTimerLabel(complete, paused);
+  const timerLabel = getTimerLabel();
+  elements.timerLabel.textContent = timerLabel;
+  elements.timerLabel.title = timerState?.taskName || "";
   elements.timerValue.textContent = formatDuration(displayMs);
   document.title = timerState?.taskName
     ? `${elements.timerValue.textContent} - ${timerState.taskName}`
     : `Work Slate Timer - ${elements.timerValue.textContent}`;
 }
 
-function getTimerLabel(complete, paused) {
-  if (complete) {
-    return "Done";
-  }
-
-  if (paused) {
-    return "Paused";
-  }
-
-  return timerState?.durationMs ? "Pomodoro" : "Focus";
+function getTimerLabel() {
+  return timerState?.taskName || "Focus";
 }
 
 function getElapsedMs() {
