@@ -2271,6 +2271,7 @@ function renderFocus(task) {
   renderFocusNotes(task);
 
   if (!task) {
+    elements.focusTitle.title = "";
     renderNextSuggestion();
     updateTimerDisplay();
     return;
@@ -2278,6 +2279,7 @@ function renderFocus(task) {
 
   elements.nextSuggestion.classList.add("hidden");
   elements.focusTitle.textContent = task.name;
+  elements.focusTitle.title = task.name;
   renderMeta(elements.focusMeta, task);
   elements.focusTimeTotal.textContent =
     task.timeSpentMins === null ? "Time spent: field not found" : `Time spent: ${task.timeSpentMins} mins`;

@@ -28,9 +28,13 @@ body {
 body {
   color: var(--timer-text);
   font-family: var(--font-ui);
-  cursor: pointer;
+  cursor: grab;
   user-select: none;
   -webkit-app-region: no-drag;
+}
+
+body.is-dragging {
+  cursor: grabbing;
 }
 
 .floating-timer {
@@ -48,6 +52,7 @@ body {
     var(--timer-bg);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
   backdrop-filter: blur(16px);
+  touch-action: none;
 }
 
 .floating-timer:focus-visible {

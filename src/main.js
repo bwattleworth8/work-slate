@@ -16,6 +16,7 @@ let tray;
 let applyingWindowModeBounds = false;
 let windowModeBoundsSaveTimer = null;
 let floatingTimerBoundsSaveTimer = null;
+let floatingTimerDragState = null;
 let latestFocusTimerState = null;
 let updaterSetupComplete = false;
 let currentUpdateStatus = null;
@@ -43,6 +44,7 @@ const FLOATING_TIMER_WINDOW = {
   height: 62,
   margin: 12
 };
+const FLOATING_TIMER_ALWAYS_ON_TOP_LEVEL = "screen-saver";
 
 const ACTIVE_UPDATE_STATES = new Set(["checking", "downloading"]);
 const UPDATE_RELEASE_ACCESS_MESSAGE =
@@ -462,14 +464,32 @@ function createFloatingTimerWindow() {
   });
 
   focusTimerWindow.loadFile(path.join(__dirname, "renderer", "floating-timer.html"));
-  focusTimerWindow.setAlwaysOnTop(true, "floating");
+  enforceFloatingTimerAlwaysOnTop(focusTimerWindow);
+  focusTimerWindow.on("show", () => enforceFloatingTimerAlwaysOnTop(focusTimerWindow));
   focusTimerWindow.on("move", saveFloatingTimerBounds);
   focusTimerWindow.on("closed", () => {
+    floatingTimerDragState = null;
     focusTimerWindow = null;
   });
   focusTimerWindow.webContents.on("did-finish-load", sendFloatingTimerState);
 
   return focusTimerWindow;
+}
+
+function enforceFloatingTimerAlwaysOnTop(timerWindow = focusTimerWindow) {
+  if (!timerWindow || timerWindow.isDestroyed()) {
+    return;
+  }
+
+  timerWindow.setAlwaysOnTop(true, FLOATING_TIMER_ALWAYS_ON_TOP_LEVEL);
+
+  if (process.platform === "darwin") {
+    timerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+
+  if (timerWindow.isVisible() && typeof timerWindow.moveTop === "function") {
+    timerWindow.moveTop();
+  }
 }
 
 function getFloatingTimerInitialBounds() {
@@ -548,11 +568,66 @@ function saveFloatingTimerBounds() {
   }, 180);
 }
 
+function startFloatingTimerDrag() {
+  if (!focusTimerWindow || focusTimerWindow.isDestroyed()) {
+    return;
+  }
+
+  const [windowX, windowY] = focusTimerWindow.getPosition();
+  const cursor = screen.getCursorScreenPoint();
+
+  floatingTimerDragState = {
+    windowX,
+    windowY,
+    cursorX: cursor.x,
+    cursorY: cursor.y
+  };
+  enforceFloatingTimerAlwaysOnTop();
+}
+
+function moveFloatingTimerDrag() {
+  if (!focusTimerWindow || focusTimerWindow.isDestroyed() || !floatingTimerDragState) {
+    return;
+  }
+
+  const cursor = screen.getCursorScreenPoint();
+  const nextBounds = {
+    x: Math.round(floatingTimerDragState.windowX + cursor.x - floatingTimerDragState.cursorX),
+    y: Math.round(floatingTimerDragState.windowY + cursor.y - floatingTimerDragState.cursorY),
+    width: FLOATING_TIMER_WINDOW.width,
+    height: FLOATING_TIMER_WINDOW.height
+  };
+  const clampedBounds = clampFloatingTimerBounds(
+    nextBounds,
+    screen.getDisplayMatching(nextBounds).workArea
+  );
+
+  focusTimerWindow.setBounds(
+    {
+      ...clampedBounds,
+      width: FLOATING_TIMER_WINDOW.width,
+      height: FLOATING_TIMER_WINDOW.height
+    },
+    false
+  );
+  enforceFloatingTimerAlwaysOnTop();
+}
+
+function endFloatingTimerDrag() {
+  if (!floatingTimerDragState) {
+    return;
+  }
+
+  floatingTimerDragState = null;
+  saveFloatingTimerBounds();
+}
+
 function showFloatingTimerWindow() {
   const timerWindow = createFloatingTimerWindow();
   sendFloatingTimerState();
 
   if (timerWindow.isVisible()) {
+    enforceFloatingTimerAlwaysOnTop(timerWindow);
     return;
   }
 
@@ -561,6 +636,7 @@ function showFloatingTimerWindow() {
   } else {
     timerWindow.show();
   }
+  enforceFloatingTimerAlwaysOnTop(timerWindow);
 }
 
 function hideFloatingTimerWindow() {
@@ -618,6 +694,10 @@ function normalizeFocusTimerState(timerState) {
 function sendFloatingTimerState() {
   if (!focusTimerWindow || focusTimerWindow.isDestroyed()) {
     return;
+  }
+
+  if (focusTimerWindow.isVisible()) {
+    enforceFloatingTimerAlwaysOnTop();
   }
 
   focusTimerWindow.webContents.send("floatingTimer:state", latestFocusTimerState);
@@ -1143,6 +1223,12 @@ function registerIpcHandlers() {
     showMainWindow();
     return true;
   });
+
+  ipcMain.on("floatingTimer:dragStart", startFloatingTimerDrag);
+
+  ipcMain.on("floatingTimer:dragMove", moveFloatingTimerDrag);
+
+  ipcMain.on("floatingTimer:dragEnd", endFloatingTimerDrag);
 
   ipcMain.handle("queues:add", (_event, queueName, cardId) => addCardToQueue(queueName, cardId));
 

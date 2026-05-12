@@ -6,9 +6,18 @@ const elements = {
 
 let timerState = null;
 let tickTimer = null;
+let dragState = null;
+let suppressNextClick = false;
+
+const DRAG_THRESHOLD_PX = 4;
 
 async function init() {
-  elements.container.addEventListener("click", openMainWindow);
+  elements.container.addEventListener("pointerdown", startPointerDrag);
+  elements.container.addEventListener("pointermove", movePointerDrag);
+  elements.container.addEventListener("pointerup", endPointerDrag);
+  elements.container.addEventListener("pointercancel", cancelPointerDrag);
+  elements.container.addEventListener("lostpointercapture", cancelPointerDrag);
+  elements.container.addEventListener("click", handleClick);
   elements.container.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") {
       return;
@@ -19,6 +28,89 @@ async function init() {
   });
   window.floatingTimer.onStateChanged(applyTimerState);
   applyTimerState(await window.floatingTimer.getState());
+}
+
+function startPointerDrag(event) {
+  if (event.button !== 0) {
+    return;
+  }
+
+  dragState = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    dragging: false
+  };
+
+  try {
+    elements.container.setPointerCapture(event.pointerId);
+  } catch {
+    // Pointer capture is a best-effort improvement for dragging near window edges.
+  }
+}
+
+function movePointerDrag(event) {
+  if (!dragState || event.pointerId !== dragState.pointerId) {
+    return;
+  }
+
+  if (!dragState.dragging) {
+    const deltaX = event.clientX - dragState.startX;
+    const deltaY = event.clientY - dragState.startY;
+
+    if (Math.hypot(deltaX, deltaY) < DRAG_THRESHOLD_PX) {
+      return;
+    }
+
+    dragState.dragging = true;
+    document.body.classList.add("is-dragging");
+    window.floatingTimer.startDrag();
+  }
+
+  event.preventDefault();
+  window.floatingTimer.moveDrag();
+}
+
+function endPointerDrag(event) {
+  finishPointerDrag(event);
+}
+
+function cancelPointerDrag(event) {
+  finishPointerDrag(event, true);
+}
+
+function finishPointerDrag(event, cancelled = false) {
+  if (!dragState || event.pointerId !== dragState.pointerId) {
+    return;
+  }
+
+  if (dragState.dragging) {
+    suppressNextClick = !cancelled;
+    event.preventDefault();
+    window.floatingTimer.endDrag();
+  }
+
+  document.body.classList.remove("is-dragging");
+
+  if (elements.container.hasPointerCapture?.(event.pointerId)) {
+    try {
+      elements.container.releasePointerCapture(event.pointerId);
+    } catch {
+      // Releasing a missing pointer capture is harmless.
+    }
+  }
+
+  dragState = null;
+}
+
+function handleClick(event) {
+  if (suppressNextClick) {
+    suppressNextClick = false;
+    event.preventDefault();
+    return;
+  }
+
+  openMainWindow();
 }
 
 async function openMainWindow() {
