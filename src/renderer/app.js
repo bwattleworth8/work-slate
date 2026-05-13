@@ -28,7 +28,9 @@ const state = {
   pendingQuickAddTask: null,
   updateStatus: null,
   queueDrag: {
+    sourcePane: null,
     queueName: null,
+    sourceQueueName: null,
     cardId: null
   }
 };
@@ -43,6 +45,7 @@ const FOCUS_NOTES_MAX_LENGTH = 1000;
 const MAX_STORED_FOCUS_SESSIONS = 500;
 const MAX_STORED_COMPLETED_TASKS = 500;
 const DUE_SOON_DAYS = 3;
+const QUEUE_NAMES = ["today", "week"];
 const TIMER_MODES = {
   stopwatch: null,
   "pomodoro-25": 25,
@@ -98,9 +101,11 @@ const elements = {
   focusNotesInput: document.querySelector("#focusNotesInput"),
   focusNotesCount: document.querySelector("#focusNotesCount"),
   focusNoteFormatButtons: [...document.querySelectorAll("[data-note-format]")],
+  todaySection: document.querySelector("#todaySection"),
   todayQueueCount: document.querySelector("#todayQueueCount"),
   todayQueueEmpty: document.querySelector("#todayQueueEmpty"),
   todayQueueList: document.querySelector("#todayQueueList"),
+  weekSection: document.querySelector("#weekSection"),
   weekQueueCount: document.querySelector("#weekQueueCount"),
   weekQueueEmpty: document.querySelector("#weekQueueEmpty"),
   weekQueueList: document.querySelector("#weekQueueList"),
@@ -122,6 +127,7 @@ const elements = {
   workspaceSubtitle: document.querySelector("#workspaceSubtitle"),
   taskCount: document.querySelector("#taskCount"),
   taskListTitle: document.querySelector("#taskListTitle"),
+  taskListSection: document.querySelector("#taskListSection"),
   emptyState: document.querySelector("#emptyState"),
   taskList: document.querySelector("#taskList"),
   quickAddDialog: document.querySelector("#quickAddDialog"),
@@ -219,6 +225,7 @@ function bindEvents() {
   }
   elements.acceptNextButton.addEventListener("click", acceptNextSuggestion);
   elements.dismissNextButton.addEventListener("click", dismissNextSuggestion);
+  bindTaskPaneDropTargets();
 
   for (const button of elements.modeButtons) {
     button.addEventListener("click", () => setViewMode(button.dataset.viewMode));
@@ -260,6 +267,46 @@ function bindEvents() {
   window.taskWidget.onUpdateStatus((status) => {
     renderUpdateStatus(status, { showMessage: true });
   });
+}
+
+function bindTaskPaneDropTargets() {
+  for (const target of getTaskPaneDropTargets()) {
+    target.element.dataset.dropLabel = target.label;
+    target.element.addEventListener("dragover", (event) =>
+      handleTaskPaneDragOver(event, target.paneName, target.element)
+    );
+    target.element.addEventListener("dragleave", (event) =>
+      handleTaskPaneDragLeave(event, target.element)
+    );
+    target.element.addEventListener("drop", (event) =>
+      handleTaskPaneDrop(event, target.paneName, target.element)
+    );
+  }
+}
+
+function getTaskPaneDropTargets() {
+  return [
+    {
+      paneName: "focus",
+      label: "Drop to focus",
+      element: elements.focusPanel
+    },
+    {
+      paneName: "today",
+      label: "Drop in Today",
+      element: elements.todaySection
+    },
+    {
+      paneName: "week",
+      label: "Drop in Week",
+      element: elements.weekSection
+    },
+    {
+      paneName: "all",
+      label: "Drop in All Tasks",
+      element: elements.taskListSection
+    }
+  ].filter((target) => target.element);
 }
 
 async function syncUpdateStatus() {
@@ -1202,17 +1249,13 @@ function renderQueue(queueName, listElement, emptyElement, countElement) {
 function renderQueueCard(queueName, task) {
   const item = document.createElement("article");
   item.className = "task-item queue-card";
-  item.draggable = true;
   item.classList.toggle("active-focus", task.id === state.focusTask?.id);
-  item.addEventListener("dragstart", (event) =>
-    handleQueueDragStart(event, queueName, task.id, item)
-  );
+  makeTaskDraggable(item, task, queueName);
   item.addEventListener("dragover", (event) =>
     handleQueueDragOver(event, queueName, task.id, item)
   );
   item.addEventListener("dragleave", () => clearQueueDropClasses(item));
   item.addEventListener("drop", (event) => handleQueueDrop(event, queueName, task.id, item));
-  item.addEventListener("dragend", clearQueueDragState);
 
   const completeCheckbox = createCompleteCheckbox(task, item);
   const title = document.createElement("h3");
@@ -1238,28 +1281,48 @@ function renderQueueCard(queueName, task) {
     removeQueuedTask(queueName, task.id)
   );
   const queueButtons =
-    queueName === "week"
+    queueName === "today"
       ? [
-          createActionButton("Move to Today", "secondary-button", () =>
-            moveQueuedTaskToToday(task.id)
+          createActionButton("Move to Week", "secondary-button", () =>
+            moveQueuedTaskBetweenQueues("today", "week", task.id)
           )
         ]
-      : [];
+      : [
+          createActionButton("Move to Today", "secondary-button", () =>
+            moveQueuedTaskBetweenQueues("week", "today", task.id)
+          )
+        ];
 
   actions.append(...queueButtons, focusButton, openButton, removeButton);
   item.append(completeCheckbox, title, meta, actions);
   return item;
 }
 
-function handleQueueDragStart(event, queueName, cardId, item) {
-  if (event.target instanceof Element && event.target.closest("button")) {
+function makeTaskDraggable(item, task, sourcePane) {
+  item.draggable = true;
+  item.addEventListener("dragstart", (event) => handleTaskDragStart(event, sourcePane, task, item));
+  item.addEventListener("dragend", clearTaskDragState);
+}
+
+function handleTaskDragStart(event, sourcePane, task, item) {
+  if (
+    event.target instanceof Element &&
+    event.target.closest("button, input, textarea, select, a")
+  ) {
     event.preventDefault();
     return;
   }
 
-  state.queueDrag = { queueName, cardId };
+  const sourceQueueName = sourcePane === "today" || sourcePane === "week" ? sourcePane : null;
+  state.queueDrag = {
+    sourcePane,
+    queueName: sourceQueueName,
+    sourceQueueName,
+    cardId: task.id
+  };
   event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", cardId);
+  event.dataTransfer.setData("text/plain", task.id);
+  setPaneDropTargetsActive(true);
   window.requestAnimationFrame(() => item.classList.add("dragging"));
 }
 
@@ -1321,7 +1384,7 @@ function handleQueueListDrop(event, queueName, listElement) {
 function canDropQueuedTask(queueName, targetCardId = null) {
   return Boolean(
     state.queueDrag.cardId &&
-      state.queueDrag.queueName === queueName &&
+      state.queueDrag.sourceQueueName === queueName &&
       state.queueDrag.cardId !== targetCardId
   );
 }
@@ -1335,20 +1398,154 @@ function clearQueueDropClasses(item) {
   item.classList.remove("drag-over-before", "drag-over-after");
 }
 
-function clearQueueDragState() {
+function clearTaskDragState() {
   state.queueDrag = {
+    sourcePane: null,
     queueName: null,
+    sourceQueueName: null,
     cardId: null
   };
 
+  setPaneDropTargetsActive(false);
+
   for (const element of document.querySelectorAll(
-    ".queue-card.dragging, .queue-card.drag-over-before, .queue-card.drag-over-after"
+    ".task-item.dragging, #focusActive.dragging, .queue-card.drag-over-before, .queue-card.drag-over-after"
   )) {
     element.classList.remove("dragging", "drag-over-before", "drag-over-after");
   }
 
   for (const element of document.querySelectorAll(".queue-list.drag-ready")) {
     element.classList.remove("drag-ready");
+  }
+}
+
+function setPaneDropTargetsActive(isActive) {
+  for (const target of getTaskPaneDropTargets()) {
+    const canDrop = isActive && canDropTaskOnPane(target.paneName);
+    target.element.classList.toggle("task-drop-target", canDrop);
+
+    if (!canDrop) {
+      target.element.classList.remove("drag-over");
+    }
+  }
+}
+
+function handleTaskPaneDragOver(event, targetPane, targetElement) {
+  if (!canDropTaskOnPane(targetPane)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  targetElement.classList.add("drag-over");
+}
+
+function handleTaskPaneDragLeave(event, targetElement) {
+  if (!targetElement.contains(event.relatedTarget)) {
+    targetElement.classList.remove("drag-over");
+  }
+}
+
+async function handleTaskPaneDrop(event, targetPane, targetElement) {
+  if (!canDropTaskOnPane(targetPane)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  targetElement.classList.remove("drag-over");
+  const dragState = { ...state.queueDrag };
+  clearTaskDragState();
+  await moveDraggedTaskToPane(targetPane, dragState);
+}
+
+function canDropTaskOnPane(targetPane) {
+  const cardId = state.queueDrag.cardId;
+
+  if (!cardId || state.queueDrag.sourcePane === targetPane) {
+    return false;
+  }
+
+  if (targetPane !== "focus" && !canMoveCardAwayFromFocus(cardId)) {
+    return false;
+  }
+
+  if (targetPane === "focus") {
+    if (state.focusTask?.id === cardId) {
+      return false;
+    }
+
+    return !state.timer.isRunning && state.timer.elapsedMs <= 0;
+  }
+
+  if (targetPane === "all") {
+    return Boolean(state.queueDrag.sourceQueueName || state.queueDrag.sourcePane === "focus");
+  }
+
+  if (targetPane === "today" || targetPane === "week") {
+    return state.queueDrag.sourcePane !== targetPane;
+  }
+
+  return false;
+}
+
+function canMoveCardAwayFromFocus(cardId) {
+  return state.focusTask?.id !== cardId || (!state.timer.isRunning && state.timer.elapsedMs <= 0);
+}
+
+async function moveDraggedTaskToPane(targetPane, dragState) {
+  const cardId = dragState.cardId;
+  const task = getTaskById(cardId) || (state.focusTask?.id === cardId ? state.focusTask : null);
+
+  if (!task) {
+    setStatus("Could not find the dragged task.", true);
+    return;
+  }
+
+  if (targetPane === "focus") {
+    await setFocusTask(task);
+    return;
+  }
+
+  if (targetPane === "all") {
+    await moveDraggedTaskToAllTasks(dragState);
+    return;
+  }
+
+  if (targetPane === "today" || targetPane === "week") {
+    await moveDraggedTaskToQueue(targetPane, dragState);
+  }
+}
+
+async function moveDraggedTaskToAllTasks(dragState) {
+  const clearedFocus = await clearFocusForTaskPlacement(dragState.cardId);
+
+  if (!clearedFocus) {
+    return;
+  }
+
+  try {
+    await removeTaskFromAllQueues(dragState.cardId);
+    renderTasks();
+    setStatus("Moved to All Tasks.");
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function moveDraggedTaskToQueue(targetQueueName, dragState) {
+  const clearedFocus = await clearFocusForTaskPlacement(dragState.cardId);
+
+  if (!clearedFocus) {
+    return;
+  }
+
+  try {
+    await setTaskQueuePlacement(targetQueueName, dragState.cardId);
+    renderTasks();
+    setStatus(`Moved to ${getQueueLabel(targetQueueName)}.`);
+  } catch (error) {
+    setStatus(error.message, true);
   }
 }
 
@@ -1589,6 +1786,22 @@ async function toggleQueuedTask(queueName, cardId) {
   }
 }
 
+async function setTaskQueuePlacement(targetQueueName, cardId) {
+  for (const queueName of QUEUE_NAMES) {
+    if (queueName !== targetQueueName && isQueued(queueName, cardId)) {
+      state.settings = await window.taskWidget.removeFromQueue(queueName, cardId);
+    }
+  }
+
+  if (targetQueueName && !isQueued(targetQueueName, cardId)) {
+    state.settings = await window.taskWidget.addToQueue(targetQueueName, cardId);
+  }
+}
+
+async function removeTaskFromAllQueues(cardId) {
+  await setTaskQueuePlacement(null, cardId);
+}
+
 async function removeQueuedTask(queueName, cardId) {
   try {
     state.settings = await window.taskWidget.removeFromQueue(queueName, cardId);
@@ -1599,11 +1812,17 @@ async function removeQueuedTask(queueName, cardId) {
   }
 }
 
-async function moveQueuedTaskToToday(cardId) {
+async function moveQueuedTaskBetweenQueues(sourceQueueName, targetQueueName, cardId) {
+  const clearedFocus = await clearFocusForTaskPlacement(cardId);
+
+  if (!clearedFocus) {
+    return;
+  }
+
   try {
-    state.settings = await window.taskWidget.moveBetweenQueues("week", "today", cardId);
+    await setTaskQueuePlacement(targetQueueName, cardId);
     renderTasks();
-    setStatus("Moved to Today Queue.");
+    setStatus(`Moved to ${getQueueLabel(targetQueueName)}.`);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -1631,6 +1850,34 @@ function dismissNextSuggestion() {
   setStatus("Next task dismissed.");
 }
 
+async function clearFocusForTaskPlacement(cardId) {
+  if (state.focusTask?.id !== cardId) {
+    return true;
+  }
+
+  if (state.timer.isRunning || state.timer.elapsedMs > 0) {
+    setStatus("Save the current timer before moving this task out of Focus.", true);
+    return false;
+  }
+
+  const focusTask = state.focusTask;
+  setLoading(true);
+  setStatus("Clearing focus...");
+
+  try {
+    await syncFocusNoteToTrello(focusTask);
+  } catch (error) {
+    setStatus(error.message, true);
+    setLoading(false);
+    return false;
+  }
+
+  state.focusTask = null;
+  resetTimer();
+  setLoading(false);
+  return true;
+}
+
 async function setFocusTask(task) {
   if (state.timer.isRunning || state.timer.elapsedMs > 0) {
     setStatus("Save the current timer before changing focus.", true);
@@ -1654,9 +1901,15 @@ async function setFocusTask(task) {
 
   state.focusTask = task;
   state.nextSuggestion = null;
-  resetTimer();
-  renderTasks();
-  setStatus(`Focused: ${task.name}`);
+
+  try {
+    await removeTaskFromAllQueues(task.id);
+    resetTimer();
+    renderTasks();
+    setStatus(`Focused: ${task.name}`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
 }
 
 async function clearFocus() {
@@ -2269,6 +2522,7 @@ function renderFocus(task) {
   elements.focusActive.classList.toggle("hidden", !task);
   elements.focusHeaderOpenButton.disabled = !task?.url;
   renderFocusNotes(task);
+  bindFocusedTaskDrag(task);
 
   if (!task) {
     elements.focusTitle.title = "";
@@ -2284,6 +2538,20 @@ function renderFocus(task) {
   elements.focusTimeTotal.textContent =
     task.timeSpentMins === null ? "Time spent: field not found" : `Time spent: ${task.timeSpentMins} mins`;
   updateTimerDisplay();
+}
+
+function bindFocusedTaskDrag(task) {
+  elements.focusActive.draggable = Boolean(task);
+
+  if (!task) {
+    elements.focusActive.ondragstart = null;
+    elements.focusActive.ondragend = null;
+    return;
+  }
+
+  elements.focusActive.ondragstart = (event) =>
+    handleTaskDragStart(event, "focus", task, elements.focusActive);
+  elements.focusActive.ondragend = clearTaskDragState;
 }
 
 function renderNextSuggestion() {
@@ -2513,6 +2781,7 @@ function renderTaskListItem(task) {
   const item = document.createElement("article");
   item.className = "task-item";
   item.classList.toggle("active-focus", task.id === state.focusTask?.id);
+  makeTaskDraggable(item, task, "all");
 
   const completeCheckbox = createCompleteCheckbox(task, item);
   const title = document.createElement("h3");
