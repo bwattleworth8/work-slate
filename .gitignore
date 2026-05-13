@@ -1,6 +1,7 @@
 node_modules/
 dist/
 out/
+.env
 secrets/
 github_release_token
 *.log

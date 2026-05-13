@@ -7,10 +7,10 @@
   "scripts": {
     "start": "node scripts/start-electron.js",
     "icons": "node scripts/generate-icons.js",
-    "check": "node --check scripts/start-electron.js && node --check scripts/generate-icons.js && node --check build/afterPack.js && node --check src/main.js && node --check src/preload.js && node --check src/floatingTimerPreload.js && node --check src/settingsStore.js && node --check src/trelloClient.js && node --check src/renderer/app.js && node --check src/renderer/floating-timer.js",
+    "check": "node --check scripts/start-electron.js && node --check scripts/generate-icons.js && node --check scripts/release.js && node --check build/afterPack.js && node --check src/main.js && node --check src/preload.js && node --check src/floatingTimerPreload.js && node --check src/settingsStore.js && node --check src/trelloClient.js && node --check src/renderer/app.js && node --check src/renderer/floating-timer.js",
     "pack": "npm run icons && electron-builder --dir",
     "dist": "npm run icons && electron-builder --win nsis",
-    "release": "npm run icons && electron-builder --win nsis --publish always"
+    "release": "node scripts/release.js"
   },
   "build": {
     "appId": "com.local.work-slate",
