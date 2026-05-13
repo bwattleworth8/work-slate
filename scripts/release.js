@@ -63,7 +63,7 @@ function run(command, args) {
   const result = spawnSync(command, args, {
     cwd: ROOT_DIR,
     env: process.env,
-    shell: process.platform === "win32",
+    shell: process.platform === "win32" && command.endsWith(".cmd"),
     stdio: "inherit"
   });
 
