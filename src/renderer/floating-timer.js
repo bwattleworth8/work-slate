@@ -8,8 +8,12 @@ let timerState = null;
 let tickTimer = null;
 let dragState = null;
 let suppressNextClick = false;
+let reminderTimer = null;
+let lastReminderBucket = 0;
 
 const DRAG_THRESHOLD_PX = 4;
+const REMINDER_INTERVAL_MS = 15 * 60 * 1000;
+const REMINDER_DURATION_MS = 5000;
 
 async function init() {
   elements.container.addEventListener("pointerdown", startPointerDrag);
@@ -122,7 +126,11 @@ async function openMainWindow() {
 }
 
 function applyTimerState(nextTimerState) {
-  timerState = normalizeTimerState(nextTimerState);
+  const previousTimerState = timerState;
+  const normalizedTimerState = normalizeTimerState(nextTimerState);
+
+  syncReminderBaseline(previousTimerState, normalizedTimerState);
+  timerState = normalizedTimerState;
   restartTicker();
   render();
 }
@@ -173,6 +181,7 @@ function render() {
   document.title = timerState?.taskName
     ? `${elements.timerValue.textContent} - ${timerState.taskName}`
     : `Work Slate Timer - ${elements.timerValue.textContent}`;
+  updateReminderState();
 }
 
 function getTimerLabel() {
@@ -180,21 +189,25 @@ function getTimerLabel() {
 }
 
 function getElapsedMs() {
-  if (!timerState) {
+  return getElapsedMsForState(timerState);
+}
+
+function getElapsedMsForState(nextTimerState) {
+  if (!nextTimerState) {
     return 0;
   }
 
-  let elapsedMs = timerState.elapsedMs;
+  let elapsedMs = nextTimerState.elapsedMs;
 
-  if (timerState.isRunning && timerState.startedAt) {
-    elapsedMs += Date.now() - timerState.startedAt;
+  if (nextTimerState.isRunning && nextTimerState.startedAt) {
+    elapsedMs += Date.now() - nextTimerState.startedAt;
   }
 
-  if (!timerState.durationMs) {
+  if (!nextTimerState.durationMs) {
     return Math.max(0, elapsedMs);
   }
 
-  return Math.min(Math.max(0, elapsedMs), timerState.durationMs);
+  return Math.min(Math.max(0, elapsedMs), nextTimerState.durationMs);
 }
 
 function getDisplayMs() {
@@ -208,11 +221,103 @@ function getDisplayMs() {
 }
 
 function isTimerComplete() {
+  return isTimerCompleteForState(timerState);
+}
+
+function isTimerCompleteForState(nextTimerState) {
   return Boolean(
-    timerState?.hasFocusTask &&
-      timerState.durationMs &&
-      (timerState.completed || getElapsedMs() >= timerState.durationMs)
+    nextTimerState?.hasFocusTask &&
+      nextTimerState.durationMs &&
+      (nextTimerState.completed || getElapsedMsForState(nextTimerState) >= nextTimerState.durationMs)
   );
+}
+
+function syncReminderBaseline(previousTimerState, nextTimerState) {
+  if (!shouldMonitorReminders(nextTimerState)) {
+    lastReminderBucket = getReminderBucket(nextTimerState);
+    clearReminderFlash();
+    return;
+  }
+
+  const timerReset = didTimerSessionReset(previousTimerState, nextTimerState);
+  if (!shouldMonitorReminders(previousTimerState) || timerReset) {
+    lastReminderBucket = getReminderBucket(nextTimerState);
+
+    if (timerReset) {
+      clearReminderFlash();
+    }
+  }
+}
+
+function updateReminderState() {
+  if (!shouldMonitorReminders(timerState)) {
+    lastReminderBucket = getReminderBucket(timerState);
+    clearReminderFlash();
+    return;
+  }
+
+  const currentReminderBucket = getReminderBucket(timerState);
+  if (currentReminderBucket <= lastReminderBucket || currentReminderBucket <= 0) {
+    return;
+  }
+
+  lastReminderBucket = currentReminderBucket;
+  triggerReminderFlash();
+}
+
+function shouldMonitorReminders(nextTimerState) {
+  return Boolean(
+    nextTimerState?.hasFocusTask &&
+      nextTimerState.isRunning &&
+      !isTimerCompleteForState(nextTimerState)
+  );
+}
+
+function getReminderBucket(nextTimerState) {
+  return Math.floor(getElapsedMsForState(nextTimerState) / REMINDER_INTERVAL_MS);
+}
+
+function didTimerSessionReset(previousTimerState, nextTimerState) {
+  if (!previousTimerState) {
+    return true;
+  }
+
+  if (
+    previousTimerState.taskName !== nextTimerState.taskName ||
+    previousTimerState.mode !== nextTimerState.mode ||
+    previousTimerState.durationMs !== nextTimerState.durationMs
+  ) {
+    return true;
+  }
+
+  const previousElapsedMs = getElapsedMsForState(previousTimerState);
+  const nextElapsedMs = getElapsedMsForState(nextTimerState);
+  return nextElapsedMs + 1000 < previousElapsedMs;
+}
+
+function triggerReminderFlash() {
+  if (reminderTimer) {
+    window.clearTimeout(reminderTimer);
+    reminderTimer = null;
+  }
+
+  document.body.classList.remove("is-reminding");
+  void elements.container.offsetWidth;
+  document.body.classList.add("is-reminding");
+
+  reminderTimer = window.setTimeout(() => {
+    document.body.classList.remove("is-reminding");
+    reminderTimer = null;
+  }, REMINDER_DURATION_MS);
+}
+
+function clearReminderFlash() {
+  if (reminderTimer) {
+    window.clearTimeout(reminderTimer);
+    reminderTimer = null;
+  }
+
+  document.body.classList.remove("is-reminding");
 }
 
 function formatDuration(milliseconds) {
