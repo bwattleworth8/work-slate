@@ -5,6 +5,7 @@ const state = {
   workspaceView: "dashboard",
   selectedListIds: new Set(),
   focusTask: null,
+  focusReturnPlacement: null,
   nextSuggestion: null,
   timer: {
     isRunning: false,
@@ -986,7 +987,7 @@ async function routeQuickAddTask(route) {
       return;
     }
 
-    await setFocusTask(task);
+    await setFocusTask(task, { sourcePane: "all" });
     if (state.focusTask?.id === task.id) {
       state.pendingQuickAddTask = null;
       closeDialog(elements.quickAddRouteDialog);
@@ -1181,6 +1182,7 @@ function reconcileSelectedListFilters() {
 
 function reconcileFocusWithTasks() {
   if (!state.focusTask) {
+    state.focusReturnPlacement = null;
     reconcileNextSuggestionWithTasks();
     return;
   }
@@ -1194,6 +1196,7 @@ function reconcileFocusWithTasks() {
 
   if (!state.timer.isRunning) {
     state.focusTask = null;
+    state.focusReturnPlacement = null;
   }
 
   reconcileNextSuggestionWithTasks();
@@ -1217,6 +1220,116 @@ function isQueued(queueName, cardId) {
 
 function getTaskById(cardId) {
   return state.tasks.find((task) => task.id === cardId) || null;
+}
+
+function captureFocusReturnPlacement(cardId, sourcePane = null) {
+  return {
+    cardId,
+    sourcePane: normalizeFocusReturnPane(sourcePane) || getCurrentTaskPane(cardId),
+    queues: Object.fromEntries(
+      QUEUE_NAMES.map((queueName) => [queueName, [...getQueueIds(queueName)]])
+    )
+  };
+}
+
+function normalizeFocusReturnPane(paneName) {
+  if (paneName === "today" || paneName === "week" || paneName === "all") {
+    return paneName;
+  }
+
+  return null;
+}
+
+function getCurrentTaskPane(cardId) {
+  if (isQueued("today", cardId)) {
+    return "today";
+  }
+
+  if (isQueued("week", cardId)) {
+    return "week";
+  }
+
+  return "all";
+}
+
+async function restoreFocusReturnPlacement(placement) {
+  if (!placement?.cardId) {
+    return;
+  }
+
+  for (const queueName of QUEUE_NAMES) {
+    const originalQueueIds = Array.isArray(placement.queues?.[queueName])
+      ? placement.queues[queueName]
+      : [];
+    const currentQueueIds = getQueueIds(queueName);
+    const nextQueueIds = originalQueueIds.includes(placement.cardId)
+      ? restoreCardToQueueOrder(currentQueueIds, placement.cardId, originalQueueIds)
+      : currentQueueIds.filter((id) => id !== placement.cardId);
+
+    if (!areStringArraysEqual(currentQueueIds, nextQueueIds)) {
+      state.settings = await window.taskWidget.reorderQueue(queueName, nextQueueIds);
+    }
+  }
+}
+
+function restoreCardToQueueOrder(currentQueueIds, cardId, originalQueueIds) {
+  const nextQueueIds = currentQueueIds.filter((id) => id !== cardId);
+  const originalIndex = originalQueueIds.indexOf(cardId);
+
+  if (originalIndex === -1) {
+    return nextQueueIds;
+  }
+
+  let insertAt = nextQueueIds.length;
+  let foundPredecessor = false;
+
+  for (let index = originalIndex - 1; index >= 0; index -= 1) {
+    const predecessorIndex = nextQueueIds.indexOf(originalQueueIds[index]);
+
+    if (predecessorIndex !== -1) {
+      insertAt = predecessorIndex + 1;
+      foundPredecessor = true;
+      break;
+    }
+  }
+
+  if (!foundPredecessor) {
+    for (let index = originalIndex + 1; index < originalQueueIds.length; index += 1) {
+      const successorIndex = nextQueueIds.indexOf(originalQueueIds[index]);
+
+      if (successorIndex !== -1) {
+        insertAt = successorIndex;
+        break;
+      }
+    }
+  }
+
+  nextQueueIds.splice(insertAt, 0, cardId);
+  return nextQueueIds;
+}
+
+function areStringArraysEqual(first, second) {
+  return first.length === second.length && first.every((value, index) => value === second[index]);
+}
+
+function getFocusReturnPlacementLabel(placement) {
+  const queueNames = QUEUE_NAMES.filter((queueName) =>
+    placement?.queues?.[queueName]?.includes(placement.cardId)
+  );
+
+  if (queueNames.includes("today") && queueNames.includes("week")) {
+    return "Today and This Week";
+  }
+
+  if (queueNames.includes("today")) {
+    return "Today";
+  }
+
+  if (queueNames.includes("week")) {
+    return "This Week";
+  }
+
+  return "All Tasks";
 }
 
 function getQueuedTasks(queueName) {
@@ -1272,7 +1385,7 @@ function renderQueueCard(queueName, task) {
   const focusButton = createActionButton(
     task.id === state.focusTask?.id ? "Focused" : "Focus",
     "secondary-button",
-    () => setFocusTask(task)
+    () => setFocusTask(task, { sourcePane: queueName })
   );
   focusButton.disabled = state.timer.isRunning || state.timer.elapsedMs > 0;
 
@@ -1503,7 +1616,7 @@ async function moveDraggedTaskToPane(targetPane, dragState) {
   }
 
   if (targetPane === "focus") {
-    await setFocusTask(task);
+    await setFocusTask(task, { sourcePane: dragState.sourcePane });
     return;
   }
 
@@ -1841,7 +1954,7 @@ async function acceptNextSuggestion() {
     return;
   }
 
-  await setFocusTask(state.nextSuggestion);
+  await setFocusTask(state.nextSuggestion, { sourcePane: "today" });
 }
 
 function dismissNextSuggestion() {
@@ -1873,23 +1986,35 @@ async function clearFocusForTaskPlacement(cardId) {
   }
 
   state.focusTask = null;
+  state.focusReturnPlacement = null;
   resetTimer();
   setLoading(false);
   return true;
 }
 
-async function setFocusTask(task) {
+async function setFocusTask(task, options = {}) {
   if (state.timer.isRunning || state.timer.elapsedMs > 0) {
     setStatus("Save the current timer before changing focus.", true);
+    return;
+  }
+
+  if (state.focusTask?.id === task.id) {
+    state.focusTask = task;
+    state.nextSuggestion = null;
+    renderTasks();
+    setStatus(`Focused: ${task.name}`);
     return;
   }
 
   if (state.focusTask?.id && state.focusTask.id !== task.id) {
     setLoading(true);
     setStatus("Ending previous focus...");
+    const previousFocusTask = state.focusTask;
+    const previousReturnPlacement = state.focusReturnPlacement;
 
     try {
-      await syncFocusNoteToTrello(state.focusTask);
+      await syncFocusNoteToTrello(previousFocusTask);
+      await restoreFocusReturnPlacement(previousReturnPlacement);
     } catch (error) {
       setStatus(error.message, true);
       setLoading(false);
@@ -1899,7 +2024,9 @@ async function setFocusTask(task) {
     setLoading(false);
   }
 
+  const returnPlacement = captureFocusReturnPlacement(task.id, options.sourcePane);
   state.focusTask = task;
+  state.focusReturnPlacement = returnPlacement;
   state.nextSuggestion = null;
 
   try {
@@ -1923,11 +2050,13 @@ async function clearFocus() {
   }
 
   const focusTask = state.focusTask;
+  const returnPlacement = state.focusReturnPlacement;
   setLoading(true);
   setStatus("Clearing focus...");
 
   try {
     await syncFocusNoteToTrello(focusTask);
+    await restoreFocusReturnPlacement(returnPlacement);
   } catch (error) {
     setStatus(error.message, true);
     setLoading(false);
@@ -1935,11 +2064,13 @@ async function clearFocus() {
   }
 
   const clearedTaskId = state.focusTask?.id;
+  const returnLabel = getFocusReturnPlacementLabel(returnPlacement);
   state.focusTask = null;
+  state.focusReturnPlacement = null;
   resetTimer();
   setNextSuggestionFromToday(clearedTaskId);
   renderTasks();
-  setStatus("Focus cleared.");
+  setStatus(`Focus ended; returned to ${returnLabel}.`);
   setLoading(false);
 }
 
@@ -2811,7 +2942,7 @@ function renderTaskListItem(task) {
   focusButton.type = "button";
   focusButton.textContent = task.id === state.focusTask?.id ? "Focused" : "Focus";
   focusButton.disabled = state.timer.isRunning || state.timer.elapsedMs > 0;
-  focusButton.addEventListener("click", () => setFocusTask(task));
+  focusButton.addEventListener("click", () => setFocusTask(task, { sourcePane: "all" }));
 
   const openButton = document.createElement("button");
   openButton.className = "secondary-button";
@@ -2966,6 +3097,7 @@ async function completeTask(cardId) {
     state.tasks = state.tasks.filter((task) => task.id !== cardId);
     if (completingFocusTask) {
       state.focusTask = null;
+      state.focusReturnPlacement = null;
       resetTimer();
       setNextSuggestionFromToday(cardId);
     }
